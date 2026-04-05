@@ -191,13 +191,3 @@ Include: iconic attractions, hidden gems, dining, local experiences
 
 **Minimum bar for v1 to be considered working:** Format compliance 100%, overall score ≥ 70/100 across 5 test cases.
 
----
-
-## 8. Excalidraw Diagram Notes
-
-> For your Excalidraw diagram, draw the workflow in Section 2 with these visual groupings:
-> - **Blue box:** User inputs
-> - **Purple box:** Prompt builder (system + user prompt side by side)
-> - **Orange box:** OpenRouter API + model config
-> - **Green boxes:** Two outputs — Markdown render + ICS export
-> - **Arrow labels:** "structured text response", "regex parse", "import"
