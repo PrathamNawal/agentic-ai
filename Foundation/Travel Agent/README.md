@@ -1,58 +1,69 @@
-# 🌍 AI-Powered Travel Agent
+# Agentic AI PM Skills
+> Reusable skill files for the 5-phase agent lifecycle | Pratham Nawal
 
-An intelligent travel planning assistant that generates personalized, day-by-day itineraries based on your preferences and exports them directly to your digital calendar.
-
-## ✨ Features
-
-- **Personalized Planning**: Leveraging the power of GPT-4o (via OpenRouter) to create itineraries tailored to your unique interests.
-- **Flexible Customization**: Define your destination, trip duration, budget tier, and traveling companions.
-- **Rich Visualization**: Beautifully formatted Markdown itineraries delivered right in your Jupyter environment.
-- **Calendar Integration**: One-click export to `.ics` format, compatible with Google Calendar, Apple Calendar, and Outlook.
-- **Smart Logic**: Considers travel time, budget constraints, and interest alignment for every activity.
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-You will need the following Python libraries installed:
-
-```bash
-pip install requests icalendar
-```
-
-### Configuration
-
-1. **API Key**: Obtain an API key from [OpenRouter](https://openrouter.ai/).
-2. **Setup**: Open `travel_agent.ipynb` and enter your API key in the configuration cell:
-
-```python
-OPENROUTER_API_KEY = "your-api-key-here"
-```
-
-## 🛠️ Usage
-
-1. **Set Your Preferences**: Edit the "Trip Inputs" cell with your desired trip details:
-   - `destination`: e.g., "Paris, France"
-   - `num_days`: Duration of your stay
-   - `budget`: "low", "mid", or "luxury"
-   - `interests`: List of tags (e.g., `["food", "art", "nightlife"]`)
-   - `companions`: "solo", "couple", "family", or "group"
-2. **Generate**: Run the notebook cells sequentially. The agent will call the AI to craft your perfect trip.
-3. **Review**: Check the generated Markdown itinerary for restaurant names, landmarks, and hidden gems.
-4. **Export**: The final cell generates a `travel_itinerary.ics` file. Import this into your preferred calendar app.
-
-## 📦 Project Structure
-
-- `travel_agent.ipynb`: The main Jupyter Notebook containing the agent logic and UI.
-- `travel_itinerary.ics`: The exported calendar file (generated after running the notebook).
-- `README.md`: Project documentation.
-
-## 🛠️ Technologies Used
-
-- **Python**: Core programming language.
-- **OpenRouter API**: Interface for advanced LLMs (GPT-4o-mini).
-- **iCalendar**: Library for generating standardized calendar files.
-- **Jupyter**: Interactive environment for seamless experimentation.
+These 4 skills produce the PM documentation artifacts for every agent project in this repo. Use them in sequence — each builds on the previous.
 
 ---
-*Created with ❤️ for travelers who want to explore more and plan less.*
+
+## How to Use
+
+When starting a new agent project, work through the skills in order. Each skill tells you exactly what input it needs and what it produces.
+
+| Phase | Skill | Input | Output | Timing |
+|---|---|---|---|---|
+| 1 — Define | `agent-brief/SKILL.md` | Agent idea + user context | `brief/AGENT_BRIEF.md` | Before any code |
+| 2 — Design | `design-doc/SKILL.md` | Completed Agent Brief | `design/DESIGN_DOC.md` + eval stub | Before any code |
+| 3 — Build | *(no skill — you build)* | Design Doc | `travel_agent.ipynb` + `build/PROMPT_LOG.md` | Build phase |
+| 4 — Evaluate | `eval-scorecard/SKILL.md` | Code + real outputs | `evals/EVAL_SCORECARD.md` (full) | After first working run |
+| 5 — Operate | `ops-runbook/SKILL.md` | Brief + Design + Eval | `ops/OPS_RUNBOOK.md` | After evals complete |
+
+---
+
+## Key Principles Baked Into Every Skill
+
+**Code comes late.** Brief and Design require zero code. This forces product thinking before implementation.
+
+**Two-stage evals.** The Eval Scorecard is stubbed in Phase 2 (what does good look like?) and completed in Phase 4 (did we hit it?). Never evaluate against vibes.
+
+**Architecture decision is explicit.** Every Design Doc forces a deliberate choice of autonomy level (1–4) with a written rationale. You can't accidentally over-engineer or under-engineer.
+
+**Next Level is a first-class artifact.** Every Ops Runbook ends with a specific upgrade tied to a failing eval. Projects connect to each other.
+
+**Prompt Log is mandatory.** Every build phase has a PROMPT_LOG.md. One change at a time, always logged.
+
+---
+
+## Folder Structure Per Project
+
+```
+[Project Name]/
+├── README.md
+├── [agent_code].ipynb or .py
+├── brief/
+│   └── AGENT_BRIEF.md          ← Phase 1 output
+├── design/
+│   └── DESIGN_DOC.md           ← Phase 2 output (includes eval stub)
+├── build/
+│   └── PROMPT_LOG.md           ← Phase 3 artifact
+├── evals/
+│   └── EVAL_SCORECARD.md       ← Phase 4 output (stub from Phase 2, scored here)
+└── ops/
+    └── OPS_RUNBOOK.md          ← Phase 5 output
+```
+
+---
+
+## Skills Folder Structure
+
+```
+skills/
+├── README.md                   ← This file
+├── agent-brief/
+│   └── SKILL.md
+├── design-doc/
+│   └── SKILL.md
+├── eval-scorecard/
+│   └── SKILL.md
+└── ops-runbook/
+    └── SKILL.md
+```
