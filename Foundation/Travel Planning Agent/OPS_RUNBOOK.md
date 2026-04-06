@@ -9,11 +9,11 @@
 
 | Check | Status | Notes |
 |---|---|---|
-| API key is NOT hardcoded in committed notebook | ☐ | Use env variable or `.env` file |
-| `.env` file is in `.gitignore` | ☐ | Add line: `.env` |
-| `travel_itinerary.ics` is in `.gitignore` | ☐ | Contains personal trip data |
-| No real API key in notebook output cells | ☐ | Clear outputs before commit |
-| OpenRouter key has usage limits set | ☐ | Set monthly spend cap in OpenRouter dashboard |
+| API key is NOT hardcoded in committed notebook | ✅ | Using `os.environ.get("OPENROUTER_API_KEY")` |
+| `.env` file is in `.gitignore` | ✅ | Added |
+| `travel_itinerary.ics` is in `.gitignore` | ✅ | Added |
+| No real API key in notebook output cells | ✅ | Outputs cleared before commit |
+| OpenRouter key has usage limits set | ✅ | Monthly spend cap set in OpenRouter dashboard |
 
 **Recommended fix for API key:**
 ```python
@@ -53,7 +53,7 @@ This agent does not accept free-form user text input from untrusted sources — 
 **At current pricing, 1000 runs of this agent costs less than $0.25 with gpt-4o-mini.**
 
 ### Token Budget Controls
-- `max_tokens: 2000` — hard cap on output length
+- `max_tokens: 2000` — ✅ implemented, hard cap on output length
 - For 10+ day trips, increase to `3000` to avoid cut-off itineraries
 - For cost optimisation, could drop to `gpt-3.5-turbo` for low-budget trips
 
@@ -61,25 +61,35 @@ This agent does not accept free-form user text input from untrusted sources — 
 
 ## 4. Observability (What to Log)
 
-This is a notebook-based agent, so no formal logging infra is set up. As a learning exercise, here is what you would log in a production version:
+✅ **Implemented** via Cell 4b wrapper — latency and estimated output tokens logged on every run.
 
-| Event | What to Log | Why |
+| Event | What to Log | Status |
 |---|---|---|
-| API call made | timestamp, destination, model, token count | Audit trail |
-| API response received | latency, token usage, finish_reason | Performance |
-| Format parse result | days parsed, events created | Quality signal |
-| ICS export | filename, event count, any parse errors | Reliability |
-| Error | error type, message, input that caused it | Debugging |
+| API call made | timestamp, destination, model, token count | ⬜ Not yet |
+| API response received | latency, estimated output tokens | ✅ Implemented |
+| Format parse result | days parsed, events created | ⬜ Not yet |
+| ICS export | filename, event count, any parse errors | ⬜ Not yet |
+| Error | error type, message, input that caused it | ⬜ Not yet |
 
-**Simple logging you can add now:**
+**What's running now (Cell 4b):**
 ```python
-import time
-start = time.time()
-itinerary = generate_itinerary(...)
-latency = round(time.time() - start, 2)
-tokens_used = result["usage"]["total_tokens"]
-print(f"⏱ Latency: {latency}s | Tokens used: {tokens_used}")
+import time, tiktoken
+
+_original = generate_itinerary
+
+def generate_itinerary(destination, num_days, budget, interests, companions):
+    start = time.time()
+    result_text = _original(destination, num_days, budget, interests, companions)
+    latency = round(time.time() - start, 2)
+    enc = tiktoken.encoding_for_model("gpt-4o-mini")
+    tokens_out = len(enc.encode(result_text))
+    print(f"⏱ Latency: {latency}s | Output tokens: {tokens_out}")
+    return result_text
+
+print("✓ Observability wrapper active")
 ```
+
+**Note:** Input token count is not captured (would require returning `result` from Cell 4). Output tokens are counted via `tiktoken` — exact on the output side. To get full token usage in future, return `itinerary, result` from `generate_itinerary()` in Cell 4.
 
 ---
 
