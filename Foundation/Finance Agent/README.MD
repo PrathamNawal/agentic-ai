@@ -431,18 +431,7 @@ Built with:
 - **YFinance** — Stock market data ([pypi.org/project/yfinance](https://pypi.org/project/yfinance/))
 - **Claude 3 Haiku** — Language model via OpenRouter ([openrouter.ai](https://openrouter.ai))
 
----
 
-## 📝 Citation
-
-If you use this project in research or reference it, please cite:
-
-```bibtex
-@software{finance_agent_2025,
-  title={YFinance Market Research Agent},
-  author={Your Name},
-  year={2025},
-  url={https://github.com/yourusername/finance-agent}
 }
 ```
 
