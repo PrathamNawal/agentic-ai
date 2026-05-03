@@ -1,278 +1,176 @@
 # 🔬 Parallel Research Agent
 
-> A multi-perspective research agent built with Claude + Python asyncio. Delivers a synthesised brief on any topic in under 10 seconds by running three analyst perspectives in parallel.
+**Multi-perspective research in under 10 seconds — powered by Claude + Python asyncio.**
+
+Most research tools give you one angle. This agent consults three specialist analysts simultaneously, then synthesises their findings into a single coherent brief. No tab-switching. No stitching. Just a clean, balanced output ready for your doc, deck, or meeting.
 
 ---
 
-## What It Does
+## ✨ What Makes This Different
 
-Most research tools give you one angle. This agent runs **three specialist analysts simultaneously** — market opportunity, risk & challenges, and technology & innovation — then synthesises their outputs into a single coherent 3-paragraph brief.
+Traditional research pipelines call one AI, wait for a response, then call the next. This agent does all three at once.
 
 ```
-Topic: "generative AI in Indian enterprises"
-
-    ┌──────────────────────────────────────────┐
-    │         research_agent(topic)            │
-    └──────┬───────────────┬──────────┬────────┘
-           │               │          │
-           ▼               ▼          ▼
-    ┌────────────┐  ┌────────────┐  ┌────────────┐
-    │  Market    │  │   Risk &   │  │Technology  │
-    │ Opportunity│  │ Challenges │  │& Innovation│
-    │  Analyst   │  │  Analyst   │  │  Analyst   │
-    └──────┬─────┘  └──────┬─────┘  └──────┬─────┘
-           │    asyncio.gather() — parallel │
-           └──────────────┬─────────────────┘
-                          ▼
-                  ┌───────────────┐
-                  │  synthesize() │
-                  │  3-paragraph  │
-                  │    summary    │
-                  └───────────────┘
+WITHOUT parallelism          WITH parallelism (this agent)
+─────────────────────        ──────────────────────────────
+Market   ████░░░░░░░          Market     ████
+Risk           ████░░░░░░░    Risk       ████
+Technology           ████     Technology ████
+                              Synthesis    ██
+Total: ~15 seconds            Total: ~5 seconds
 ```
 
-**Key insight:** `asyncio.gather()` is the single highest-leverage optimisation here — it turns a 15-second sequential pipeline into a 5-second concurrent one with zero added complexity.
+The key design decision: fire all three analyst calls simultaneously with `asyncio.gather()`, collect the results, then pass them together to a synthesis step. Three calls. One wait.
 
 ---
 
-## Quick Start
+## 🧠 Design Approach
 
-### Prerequisites
+### The Three-Analyst Architecture
 
-- Python 3.8+
-- An [Anthropic API key](https://console.anthropic.com/)
+Every topic is examined through three distinct lenses, each steered by its own system prompt persona:
 
-### Install
+| Analyst | Asks | Surfaces |
+|---|---|---|
+| 📈 Market Opportunity | Who benefits? What's the size? Who's winning? | Growth signals, segments, demand drivers |
+| ⚠️ Risk & Challenges | What could go wrong? Who resists? What's missing? | Adoption barriers, threats, failure modes |
+| ⚙️ Technology & Innovation | What's enabling this? What's emerging? | Platforms, breakthroughs, infrastructure |
+
+### The Synthesis Step
+
+After the three analysts complete, a fourth call acts as an **integrator** — not a fourth analyst. Its job is to weave the perspectives into a narrative that holds together, not restate each one in sequence.
+
+```
+         Topic Input
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+📈 Market  ⚠️ Risk  ⚙️ Tech
+Analyst    Analyst  Analyst
+    │         │         │
+    └─────────┴─────────┘
+              │
+       ⚡ All 3 run at once
+              │
+       Exception filter
+     (survives API failures)
+              │
+        🧩 Synthesizer
+     (integrates, not lists)
+              │
+    3-paragraph Research Brief
+```
+
+### Why This Architecture
+
+This is a **Level 2 prompt chain** — structured, deterministic, and fast. The LLM never decides what to do next; the flow is fixed. This is intentional: the task always needs the same three angles synthesised the same way. No dynamic routing, no added complexity.
+
+The parallelism isn't a trick — it's the core design insight. Sequential calls are wasteful when the three analysts don't depend on each other's outputs.
+
+---
+
+## 🚀 Quick Start
+
+**Prerequisites:** Python 3.8+ and an [Anthropic API key](https://console.anthropic.com/)
 
 ```bash
+# Install
 pip install anthropic
-```
 
-### Set your API key
-
-```bash
+# Set your API key (never hardcode this)
 export ANTHROPIC_API_KEY="sk-ant-..."
-```
 
-> ⚠️ Never hardcode your API key in the script. Always use environment variables.
-
-### Run
-
-**As a Python script:**
-```bash
+# Run
 python research_agent.py
 ```
 
-**In Jupyter Notebook:**
-```python
-# Use await directly in Jupyter (event loop already running)
-result = await research_agent("generative AI in Indian enterprises")
-print(result)
-```
+**In Jupyter Notebook:** use `await research_agent("your topic")` directly — no `asyncio.run()` needed.
 
-**Change the topic:**
+**Change the topic:** Edit the last line of `research_agent.py`:
 ```python
 result = asyncio.run(research_agent("climate tech investment in Southeast Asia"))
 ```
 
 ---
 
-## The Code
-
-```python
-import asyncio
-import anthropic
-import time
-
-aclient = anthropic.AsyncAnthropic()
-
-async def research_topic(topic: str, angle: str) -> dict:
-    r = await aclient.messages.create(
-        model="claude-sonnet-4-5", max_tokens=300,
-        system=f"You are a {angle} analyst. Be concise and specific.",
-        messages=[{"role": "user", "content":
-            f"Give 3 key insights about: {topic}. Use a numbered list."}])
-    return {"angle": angle, "insights": r.content[0].text}
-
-async def synthesize(topic: str, results: list) -> str:
-    combined = "\n\n".join([f"{r['angle']}: {r['insights']}" for r in results])
-    r = await aclient.messages.create(
-        model="claude-sonnet-4-5", max_tokens=500,
-        system="Synthesize multi-perspective research into a coherent summary.",
-        messages=[{"role": "user", "content":
-            f"Topic: {topic}\n\nResearch from multiple angles:\n{combined}\n\nSynthesize into a 3-paragraph summary."}])
-    return r.content[0].text
-
-async def research_agent(topic: str) -> str:
-    print(f"Researching: {topic}")
-    start = time.time()
-    results = await asyncio.gather(
-        research_topic(topic, "market opportunity"),
-        research_topic(topic, "risk and challenge"),
-        research_topic(topic, "technology and innovation"),
-        return_exceptions=True
-    )
-    print(f"Parallel research done in {time.time() - start:.1f}s")
-    clean = [r for r in results if not isinstance(r, Exception)]
-    print(f"Got {len(clean)}/{len(results)} perspectives successfully")
-    summary = await synthesize(topic, clean)
-    return summary
-
-# Script entry point
-result = asyncio.run(research_agent("generative AI in Indian enterprises"))
-print("\n=== SYNTHESIS ===")
-print(result)
-```
-
----
-
-## Sample Output
-
-```
-Researching: generative AI in Indian enterprises
-Parallel research done in 4.3s
-Got 3/3 perspectives successfully
-
-=== SYNTHESIS ===
-India's enterprise AI market is experiencing rapid growth, driven by...
-[3-paragraph integrated brief covering market size, adoption barriers,
-and key enabling technologies]
-```
-
----
-
-## Architecture
-
-### Pattern: Level 2 — Parallel Prompt Chain
-
-This is a **fan-out / fan-in prompt chain**, not a ReAct agent. The LLM never decides what to do next — the structure is fixed and deterministic.
-
-| Dimension | This Agent |
-|---|---|
-| Pattern | Prompt chain with parallel fan-out |
-| Memory | None — fully stateless per run |
-| Tools | None in v1 |
-| Autonomy | Level 2 of 4 |
-| Upgrade path | Level 3: add `web_search` per analyst call |
-
-### How Parallelism Works
-
-Without `asyncio.gather`, the three analyst calls would run sequentially (~12–15s). With it, they run concurrently and finish in the time of the slowest single call (~4–5s).
-
-```python
-# All 3 fire simultaneously — no waiting
-results = await asyncio.gather(
-    research_topic(topic, "market opportunity"),
-    research_topic(topic, "risk and challenge"),
-    research_topic(topic, "technology and innovation"),
-    return_exceptions=True   # ← one failure doesn't kill the others
-)
-```
-
-### Prompt Design
-
-Each analyst call uses a **role-playing system prompt** to steer perspective:
-
-| Call | System prompt | Output |
-|---|---|---|
-| Market analyst | `"You are a market opportunity analyst. Be concise and specific."` | 3 market insights |
-| Risk analyst | `"You are a risk and challenge analyst. Be concise and specific."` | 3 risk insights |
-| Tech analyst | `"You are a technology and innovation analyst. Be concise and specific."` | 3 tech insights |
-| Synthesis | `"Synthesize multi-perspective research into a coherent summary."` | 3-paragraph brief |
-
----
-
-## Cost & Performance
+## 📊 Cost & Performance
 
 | Metric | Typical Value |
 |---|---|
-| End-to-end latency | 4–7 seconds |
-| Cost per run | ~$0.011 (claude-sonnet-4-5) |
-| Cost per 100 runs | ~$1.10 |
+| End-to-end latency | 4 – 7 seconds |
 | API calls per run | 4 (3 research + 1 synthesis) |
+| Cost per run | ~$0.011 |
+| Cost per 100 runs | ~$1.10 |
 
-**To reduce cost:** Swap research calls to `claude-haiku-4-5` (~10× cheaper) and keep synthesis on Sonnet. Quality reduction on 3-bullet insights is minimal.
+> **Cost tip:** Swap the research calls to `claude-haiku-4-5` (~10× cheaper) and keep synthesis on Sonnet. Quality impact on 3-bullet insights is minimal.
 
 ---
 
-## Known Limitations
+## ⚠️ Limitations — Read Before Using
 
-| Limitation | Detail |
+**Knowledge cutoff** — Outputs are grounded in Claude's training data (~early 2025), not live sources. Cannot surface recent news, funding rounds, product launches, or regulatory changes. Freshness risk is **high** for fast-moving domains.
+
+**No citations** — Nothing is sourced or verifiable. Treat outputs as a structured starting point, not a finished report.
+
+**Fixed angles** — Market, risk, and technology are hardcoded. Geopolitical, regulatory, or competitive angles require a code change.
+
+**Stateless** — Each run starts fresh. No memory of prior topics.
+
+---
+
+## 🎯 When to Use It
+
+| ✅ Good fit | ❌ Not a good fit |
 |---|---|
-| **Knowledge cutoff** | Based on LLM training data (~early 2025). Cannot surface recent news, funding rounds, or regulatory changes. |
-| **No citations** | Outputs are not sourced or verifiable. Do not use for compliance, legal, or formal research contexts. |
-| **Fixed 3 angles** | Market, risk, and technology are hardcoded. Geopolitical, regulatory, or competitive angles require a code change. |
-| **Stateless** | No memory between runs. Prior research is not recalled. |
-| **Token limits** | 300 tokens per research call (~200 words). Very long topics may produce truncated third insights. |
-
-> **Freshness risk is HIGH.** This agent is most useful for established domains. For fast-moving topics (recent AI releases, policy changes, market events), cross-check outputs independently.
+| Getting up to speed before a meeting | Topics requiring data from the last 30 days |
+| Generating a balanced first-draft brief | Research needing cited, verifiable sources |
+| Pressure-testing your own thinking | Compliance or legal research |
+| Exploring angles you wouldn't naturally consider | Highly niche / technical domains |
 
 ---
 
-## When to Use / Not Use
+## 🗺️ Roadmap
 
-**Good fit:**
-- Getting up to speed on an unfamiliar domain before a meeting
-- Generating a balanced first-draft brief to pressure-test your own thinking
-- Exploring a topic from angles you wouldn't naturally consider
+The single highest-value upgrade is adding **web search** to each analyst call — grounding every insight in live sources with citations, and moving the agent from Level 2 (prompt chain) to Level 3 (ReAct with tools).
 
-**Not a good fit:**
-
-| Situation | Use instead |
-|---|---|
-| Need data from the last 30 days | Perplexity, web search, or add `web_search` tool |
-| Need cited sources for a report | RAG-based tool or manual research |
-| Highly niche/technical topic | Domain specialist databases, arXiv |
-| Compliance or legal research | Verified legal databases with human review |
-
----
-
-## Roadmap
-
-| Upgrade | What it adds | Priority |
+| Upgrade | Benefit | Effort |
 |---|---|---|
-| `web_search` tool per analyst call | Real-time grounded insights with citations — fixes the #1 limitation | **High** |
-| Input validation | Graceful error on short/degenerate topics | High |
-| Per-call timeout | Prevents hanging on slow API responses | High |
-| Configurable angles | Pass custom analyst perspectives as arguments | Medium |
-| Markdown file output | Save research brief as a shareable `.md` file | Medium |
-| Streamlit UI | Web form for non-technical users | Low |
-
-The highest-leverage upgrade is adding `web_search` to each analyst call. This moves the agent from **Level 2** (prompt chain) to **Level 3** (ReAct with tools) and directly fixes the freshness limitation.
+| 🔍 Web search per analyst | Real-time grounded insights + citations | Medium |
+| 🛡️ Input validation | Graceful error on degenerate topics | Low |
+| ⏱️ Per-call timeout | No hanging on slow API responses | Low |
+| 🎛️ Configurable angles | Pass custom perspectives as arguments | Low |
+| 💾 Markdown file output | Save briefs as shareable `.md` files | Low |
+| 🖥️ Streamlit UI | Web form for non-technical users | Medium |
 
 ---
 
-## Security
+## 🔒 Security
 
-- **API key:** Always use `os.environ.get("ANTHROPIC_API_KEY")` — never hardcode.
-- **`.gitignore`:** Add your `.env` file and any Jupyter notebooks with outputs.
-- **Data sent externally:** The `topic` string is sent to the Anthropic API. Do not use confidential or PII-containing topics.
-- **Spend limits:** Set a monthly cap in the [Anthropic Console](https://console.anthropic.com/) → Billing.
+- Use `os.environ.get("ANTHROPIC_API_KEY")` — never hardcode your key
+- Add `.env` and notebook output files to `.gitignore` before pushing
+- The topic string is sent to Anthropic's API — avoid confidential or PII-containing topics
+- Set a monthly spend limit in the [Anthropic Console](https://console.anthropic.com/) → Billing
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 research-agent/
-├── research_agent.py        # Main agent code
+├── research_agent.py        # Agent code
 ├── README.md                # This file
 ├── brief/
-│   └── AGENT_BRIEF.md       # Phase 1: Problem, persona, I/O spec, risks
+│   └── AGENT_BRIEF.md       # Phase 1 — Problem, persona, I/O spec, risks
 ├── design/
-│   └── DESIGN_DOC.md        # Phase 2: Architecture, prompts, config
+│   └── DESIGN_DOC.md        # Phase 2 — Architecture, prompts, configuration
 ├── evals/
-│   └── EVAL_SCORECARD.md    # Phase 4: Test cases, rubric, failure modes
+│   └── EVAL_SCORECARD.md    # Phase 4 — Test cases, rubric, failure modes
 └── ops/
-    └── OPS_RUNBOOK.md       # Phase 5: Security, cost, observability, upgrades
+    └── OPS_RUNBOOK.md       # Phase 5 — Security, cost, observability, upgrades
 ```
 
----
-
-## License
-
-MIT
+The `/brief`, `/design`, `/evals`, and `/ops` folders document the full lifecycle of how this agent was designed and evaluated — not just what it does, but *why* it's built the way it is.
 
 ---
 
-*Built with [Claude](https://anthropic.com) + Python asyncio. Agentic design documented using the 5-phase agent lifecycle: Brief → Design → Build → Eval → Operate.*
+*Built with [Claude](https://anthropic.com) · Documented using the 5-phase agent lifecycle: Brief → Design → Build → Eval → Operate*
