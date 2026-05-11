@@ -211,12 +211,4 @@ These are **not** in scope for v1 — and that's a deliberate choice, not an ove
 - ❌ Multilingual support — English-only queries in v1
 - ❌ Concurrent user support — Streamlit's single-threaded model is not designed for production traffic
 
----
-
-## Author
-
-Built by **Pratham Nawal**, PM at PayPal — as part of an agentic AI design patterns learning project.
-
----
-
 *This project demonstrates a complete agentic AI lifecycle, from problem definition to production operations, applied to a single focused agent. The goal is depth over breadth: one well-documented agent beats ten undocumented ones.*
