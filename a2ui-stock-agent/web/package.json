@@ -1,0 +1,12 @@
+{
+  "name": "a2ui-stock-agent-web",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build" },
+  "dependencies": {
+    "@a2ui/lit": "0.15.0",
+    "@a2ui/web_core": "0.15.0",
+    "lit": "^3.2.0"
+  },
+  "devDependencies": { "vite": "^6.0.0" }
+}

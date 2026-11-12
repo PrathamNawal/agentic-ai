@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A2UI Stock Agent</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#1a1d24; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --card:#f5f6f8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --fg:#e8eaed; --muted:#9aa0a6; --line:#2a2f3a; --accent:#5b8dff; --card:#1a1d24; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,sans-serif; min-height:100vh; display:flex; flex-direction:column; }
+  header, main, form { width:100%; max-width:680px; margin:0 auto; padding-left:16px; padding-right:16px; }
+  header { padding-top:16px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+  h1 { font-size:1.15rem; margin:0 0 2px; } .sub { color:var(--muted); font-size:.85rem; margin:0 0 10px; }
+  .key { display:flex; gap:8px; flex-wrap:wrap; }
+  .key input { flex:1 1 200px; } .key select { flex:0 1 220px; }
+  .note { color:var(--muted); font-size:.78rem; margin:6px 0 0; }
+  main { flex:1; padding-top:12px; padding-bottom:12px; overflow-y:auto; }
+  .msg { margin:10px 0; } .user { text-align:right; color:var(--accent); } .err { color:#dc2626; }
+  .surface { margin:10px 0; max-width:320px; }
+  form { display:flex; gap:8px; padding-top:10px; padding-bottom:16px; border-top:1px solid var(--line); }
+  input, select { padding:11px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; min-width:0; }
+  form input { flex:1; }
+  button { padding:11px 18px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+</style>
+</head>
+<body>
+<header>
+  <h1>A2UI Stock Agent</h1>
+  <p class="sub">Agno agent + Groq + yfinance. It answers with a UI card rendered by the official A2UI Lit renderer.</p>
+  <div class="key">
+    <input id="key" type="password" placeholder="Groq API key (gsk_...)" autocomplete="off">
+    <select id="model">
+      <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+      <option value="openai/gpt-oss-120b">openai/gpt-oss-120b</option>
+      <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
+    </select>
+  </div>
+  <p class="note">Your key stays in this browser tab (sessionStorage) and is sent to the server only with each request, over HTTPS, to call Groq. The server does not store or log it.</p>
+</header>
+<main id="log"></main>
+<form id="f"><input id="q" placeholder="e.g. What's NVDA trading at?" autocomplete="off" required><button id="send">Send</button></form>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

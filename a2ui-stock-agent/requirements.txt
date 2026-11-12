@@ -3,4 +3,4 @@ groq
 yfinance
 fastapi
 uvicorn
-python-dotenv
+a2ui-agent-sdk
