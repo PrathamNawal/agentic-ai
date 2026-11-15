@@ -1,18 +1,27 @@
 """Tools the Agno agent can call. Every function returns a compact JSON string.
 
-Design notes (assumptions are also listed in README.md):
-- The metric is TOTAL daily downloads per crate (sum over version rows + the
-  'other versions' bucket).
+Analysis parameters (threshold, baseline weeks, scan window) come from config.py, so
+a product manager can change them from the dashboard without touching code.
+
+Assumptions:
+- The metric is TOTAL daily downloads per crate (version rows + the 'other versions' bucket).
 - Today (UTC) is always partial, so it is excluded from all anomaly logic.
-- "Drop" = a day more than X% below the median of the same weekday over the
-  previous 4 weeks. Comparing like-for-like weekdays removes weekly seasonality.
+- An anomaly is a day that deviates from the median of the same weekday over the previous
+  N weeks, which removes weekly seasonality.
 """
+import functools
 import json
 import re
 import statistics as st
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
-from db import CAUSES, connect
+import config
+import memory
+from db import connect
+
+# The dashboard/runner sets this so investigations can be linked to their run.
+RUN = {"id": None}
 
 
 def _today() -> str:
@@ -28,18 +37,19 @@ def _totals(con, crate: str) -> dict[str, int]:
 
 
 def _baseline(totals: dict[str, int], d: str) -> float | None:
-    """Median of the same weekday over the previous 4 weeks (>=3 points needed)."""
+    """Median of the same weekday over the previous N weeks (needs >= min(3, N) points)."""
+    weeks = int(config.load()["baseline_weeks"])
     dd = date.fromisoformat(d)
-    pts = [totals[k] for w in range(1, 5)
+    pts = [totals[k] for w in range(1, weeks + 1)
            if (k := (dd - timedelta(weeks=w)).isoformat()) in totals]
-    return st.median(pts) if len(pts) >= 3 else None
+    return st.median(pts) if len(pts) >= min(3, weeks) else None
 
 
 def _out(obj) -> str:
     return json.dumps(obj, default=str)
 
 
-# --------------------------------------------------------------------- tools
+# --------------------------------------------------------------- data tools
 def list_crates() -> str:
     """List tracked crates with their data coverage (first/last complete date)."""
     con = connect(readonly=True)
@@ -50,12 +60,15 @@ def list_crates() -> str:
     return _out({"today_utc_is_partial_and_excluded": _today(), "crates": [dict(r) for r in rows]})
 
 
-def scan_for_anomalies(threshold_pct: float = 15.0, last_n_days: int = 30,
+def scan_for_anomalies(threshold_pct: Optional[float] = None, last_n_days: Optional[int] = None,
                        direction: str = "both") -> str:
     """Scan ALL tracked crates for days that deviate >= threshold_pct from the same-weekday
-    baseline (median of the previous 4 same weekdays). direction: 'down', 'up' or 'both'.
-    Returns the largest deviations first, plus how many crates were anomalous on each date
-    (many crates on one date => likely ECOSYSTEM_WIDE). Use this to decide what to investigate."""
+    baseline. direction: 'down', 'up' or 'both'. Leave threshold_pct/last_n_days empty to use
+    the configured defaults. Returns the largest deviations first, plus how many crates were
+    anomalous on each date (many crates on one date => likely ECOSYSTEM_WIDE)."""
+    cfg = config.load()
+    threshold_pct = float(threshold_pct if threshold_pct is not None else cfg["anomaly_threshold_pct"])
+    last_n_days = int(last_n_days if last_n_days is not None else cfg["scan_window_days"])
     con = connect(readonly=True)
     crates = [r[0] for r in con.execute("SELECT DISTINCT crate FROM daily_downloads")]
     found = []
@@ -95,7 +108,7 @@ def daily_series(crate: str, start: str, end: str) -> str:
 
 def peer_comparison(day: str) -> str:
     """For one date, show every tracked crate's deviation from its same-weekday baseline.
-    If most crates are down together, the drop is ECOSYSTEM_WIDE, not crate-specific."""
+    If most crates moved together, the change is ECOSYSTEM_WIDE, not crate-specific."""
     con = connect(readonly=True)
     res = []
     for (c,) in con.execute("SELECT DISTINCT crate FROM daily_downloads").fetchall():
@@ -133,8 +146,7 @@ def version_breakdown(crate: str, day: str, baseline_days: int = 7) -> str:
         out.append({"version": p["version"], "released": p["released"], "yanked": p["yanked"],
                     "baseline_avg": int(base), "on_day": p["day"], "delta": int(p["day"] - base)})
     out.sort(key=lambda x: x["delta"])
-    total_delta = sum(o["delta"] for o in out)
-    return _out({"crate": crate, "date": day, "total_delta": total_delta,
+    return _out({"crate": crate, "date": day, "total_delta": sum(o["delta"] for o in out),
                  "note": "Only the top versions per day are itemised; 'other' is an aggregate. "
                          "A negative old version with a positive new version = VERSION_MIGRATION.",
                  "versions": out})
@@ -150,16 +162,34 @@ def releases(crate: str, start: str, end: str) -> str:
     return _out([dict(r) for r in rows])
 
 
+def _is_select(query: str) -> bool:
+    return bool(re.match(r"^\s*select\b", query, re.I)) and ";" not in query.strip().rstrip(";")
+
+
 def run_sql(query: str) -> str:
     """Run a read-only SELECT against the database for ad-hoc questions.
     Tables: versions(id,crate,num,created_at,yanked,rust_version),
     daily_downloads(crate,date,version_id,downloads,fetched_at). version_id=0 is the 'other' bucket.
     Max 200 rows."""
-    if not re.match(r"^\s*select\b", query, re.I) or ";" in query.strip().rstrip(";"):
+    if not _is_select(query):
         return _out({"error": "Only a single SELECT statement is allowed."})
     try:
-        con = connect(readonly=True)
-        rows = con.execute(query).fetchmany(200)
+        rows = connect(readonly=True).execute(query).fetchmany(200)
+        return _out([dict(r) for r in rows])
+    except Exception as e:
+        return _out({"error": str(e)})
+
+
+def run_saved_query(name: str, params_json: str = "{}") -> str:
+    """Run a saved, named query defined by the product team. Pass parameters as a JSON object."""
+    q = next((q for q in config.load()["saved_queries"] if q["name"] == name), None)
+    if not q:
+        return _out({"error": f"No saved query named {name!r}",
+                     "available": [x["name"] for x in config.load()["saved_queries"]]})
+    if not _is_select(q["sql"]):
+        return _out({"error": "Saved query must be a single SELECT."})
+    try:
+        rows = connect(readonly=True).execute(q["sql"], json.loads(params_json or "{}")).fetchmany(200)
         return _out([dict(r) for r in rows])
     except Exception as e:
         return _out({"error": str(e)})
@@ -168,33 +198,27 @@ def run_sql(query: str) -> str:
 # ------------------------------------------------------------------ memory
 def recall_memory() -> str:
     """Read your own memory BEFORE investigating: lessons learned from past
-    investigations, plus how often each cause was confirmed by a human."""
-    con = connect()
-    lessons = [dict(r) for r in con.execute(
-        "SELECT situation, lesson, source FROM lessons ORDER BY id DESC LIMIT 15")]
-    stats = [dict(r) for r in con.execute(
-        "SELECT COALESCE(true_cause,hypothesis) cause, status, COUNT(*) n FROM investigations "
-        "WHERE status!='pending' GROUP BY 1,2 ORDER BY n DESC")]
-    track = con.execute(
-        "SELECT SUM(status='confirmed') ok, SUM(status='corrected') wrong FROM investigations").fetchone()
-    return _out({"lessons": lessons, "graded_outcomes_by_cause": stats,
-                 "my_track_record": {"confirmed": track["ok"] or 0, "corrected": track["wrong"] or 0},
-                 "valid_causes": CAUSES})
+    investigations, plus your graded track record and the valid cause keys."""
+    cfg = config.load()
+    return _out({"memory": memory.memory_block(int(cfg["memory_max_lessons"])),
+                 "graded_outcomes_by_cause": memory.outcomes_by_cause(),
+                 "valid_causes": cfg["causes"]})
 
 
 def record_investigation(crate: str, event_date: str, hypothesis: str, confidence: str,
                          evidence: str, steps: str) -> str:
-    """Log your conclusion. `hypothesis` MUST be one of the valid_causes keys.
+    """Log your conclusion. `hypothesis` MUST be one of the valid cause keys.
     `confidence` is low/medium/high. `evidence` = the specific numbers behind it.
     `steps` = the tools you called, in order. Returns the investigation id."""
-    if hypothesis not in CAUSES:
-        return _out({"error": f"hypothesis must be one of {list(CAUSES)}"})
+    causes = config.load()["causes"]
+    if hypothesis not in causes:
+        return _out({"error": f"hypothesis must be one of {list(causes)}"})
     con = connect()
     cur = con.execute(
-        "INSERT INTO investigations(ts,crate,event_date,hypothesis,confidence,evidence,steps) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO investigations(ts,crate,event_date,hypothesis,confidence,evidence,steps,run_id) "
+        "VALUES (?,?,?,?,?,?,?,?)",
         (datetime.now(timezone.utc).isoformat(timespec="seconds"), crate, event_date,
-         hypothesis, confidence, evidence, steps))
+         hypothesis, confidence, evidence, steps, RUN["id"]))
     con.commit()
     return _out({"investigation_id": cur.lastrowid, "status": "pending human feedback"})
 
@@ -202,12 +226,48 @@ def record_investigation(crate: str, event_date: str, hypothesis: str, confidenc
 def save_lesson(situation: str, lesson: str) -> str:
     """Save a short, reusable lesson for future runs (e.g. 'when a drop is on a Sunday,
     check the weekday baseline first'). Only save things that would change what you do next time."""
-    con = connect()
-    con.execute("INSERT INTO lessons(ts,situation,lesson,source) VALUES (?,?,?,'agent')",
-                (datetime.now(timezone.utc).isoformat(timespec="seconds"), situation, lesson))
-    con.commit()
+    memory.add_lesson(situation, lesson, "agent")
     return _out({"saved": True})
 
 
-ALL_TOOLS = [recall_memory, list_crates, scan_for_anomalies, daily_series, peer_comparison,
-             version_breakdown, releases, run_sql, record_investigation, save_lesson]
+# ---------------------------------------------------------------- registry
+TOOL_REGISTRY = {f.__name__: f for f in (
+    list_crates, scan_for_anomalies, daily_series, peer_comparison, version_breakdown,
+    releases, run_sql, run_saved_query, recall_memory, record_investigation, save_lesson)}
+
+# Tools the agent needs to do its job; the dashboard warns before they are disabled.
+ESSENTIAL = {"record_investigation", "scan_for_anomalies"}
+
+
+def default_description(name: str) -> str:
+    return " ".join((TOOL_REGISTRY[name].__doc__ or "").split())
+
+
+def _with_doc(fn, doc: str):
+    @functools.wraps(fn)
+    def wrapper(*a, **k):
+        return fn(*a, **k)
+    wrapper.__doc__ = doc
+    return wrapper
+
+
+def build_tools(cfg: dict) -> list:
+    """The tools the agent gets, honouring the PM's enable/disable switches and descriptions."""
+    tools = []
+    for name, fn in TOOL_REGISTRY.items():
+        if name in cfg["disabled_tools"]:
+            continue
+        if name == "recall_memory" and cfg["memory_mode"] != "tool":
+            continue                      # memory is injected into the prompt, or off
+        if name == "save_lesson" and cfg["memory_mode"] == "off":
+            continue
+        if name == "run_saved_query":
+            if not cfg["saved_queries"]:
+                continue
+            listing = "; ".join(f"{q['name']}: {q['description']}" for q in cfg["saved_queries"])
+            doc = (cfg["tool_descriptions"].get(name) or default_description(name)) + f" Available queries: {listing}"
+            tools.append(_with_doc(fn, doc))
+            continue
+        override = cfg["tool_descriptions"].get(name)
+        tools.append(_with_doc(fn, override) if override else fn)
+    return tools

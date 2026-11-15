@@ -2,8 +2,10 @@
 import json
 
 import tools as t
-from agent import build_agent
 from db import connect
+from ingest import ensure_data
+
+ensure_data()
 
 
 def show(name, s, n=700):
@@ -37,8 +39,8 @@ con.execute("DELETE FROM investigations WHERE id=?", (rid,)); con.commit()
 assert con.execute("SELECT COUNT(*) FROM investigations").fetchone()[0] == before
 assert "error" in json.loads(t.record_investigation(c, d, "NOT_A_CAUSE", "low", "x", "x"))
 
-from llm import DEFAULTS
 from agno.models.openrouter import OpenRouter
-agent = build_agent(OpenRouter(id=DEFAULTS['openrouter'], api_key='dummy'))  # construct only; no network call
-print(f"\nAgno agent built: {agent.name}, {len(agent.tools)} tools")
+from runner import build_agent
+agent, version = build_agent(model=OpenRouter(id='x', api_key='dummy'))  # construct only; no network call
+print(f"\nAgno agent built: {agent.name}, {len(agent.tools)} tools, prompt v{version}")
 print("\nSMOKE TEST PASSED")

@@ -1,13 +1,12 @@
-"""Pick the LLM from environment variables, so the agent is provider-agnostic.
+"""Pick the LLM from settings / environment variables, so the agent is provider-agnostic.
 
-    LLM_PROVIDER   openrouter | xai | groq | anthropic   (auto-detected from whichever key is set)
-    LLM_MODEL      model id for that provider (optional; sensible default per provider)
-
-    OPENROUTER_API_KEY   -> OpenRouter  (use any model, e.g. LLM_MODEL=x-ai/grok-4.1-fast)
+    OPENROUTER_API_KEY   -> OpenRouter  (any model, e.g. x-ai/grok-4.1-fast)
     XAI_API_KEY          -> xAI's own Grok API
     GROQ_API_KEY         -> Groq (the inference company, different from xAI's Grok)
     ANTHROPIC_API_KEY    -> Anthropic
 
+Env overrides: LLM_PROVIDER, LLM_MODEL, LLM_BASE_URL. The dashboard can also pass a key
+for the current session only (it is never written to disk).
 The agent needs a model that supports tool calling.
 """
 import os
@@ -26,31 +25,38 @@ KEYS = {
 }
 
 
-def detect_provider() -> str | None:
-    p = os.getenv("LLM_PROVIDER", "").lower().strip()
-    if p:
+def detect_provider(provider: str | None = None, api_key: str | None = None) -> str | None:
+    p = (provider or os.getenv("LLM_PROVIDER", "")).lower().strip()
+    if p and p != "auto":
         if p not in KEYS:
-            raise SystemExit(f"LLM_PROVIDER must be one of {list(KEYS)}")
+            raise ValueError(f"provider must be one of {list(KEYS)}")
         return p
     return next((name for name, key in KEYS.items() if os.getenv(key)), None)
 
 
-def get_model():
-    provider = detect_provider()
+def configured_providers() -> list[str]:
+    return [n for n, k in KEYS.items() if os.getenv(k)]
+
+
+def get_model(provider: str | None = None, model_id: str | None = None,
+              api_key: str | None = None, base_url: str | None = None):
+    provider = detect_provider(provider)
     if not provider:
-        raise SystemExit("No LLM key found. Set one of: " + ", ".join(KEYS.values()))
-    if not os.getenv(KEYS[provider]):
-        raise SystemExit(f"LLM_PROVIDER={provider} but {KEYS[provider]} is not set.")
-    model_id = os.getenv("LLM_MODEL", DEFAULTS[provider])
+        raise ValueError("No LLM key found. Enter a key in the sidebar or set one of: " + ", ".join(KEYS.values()))
+    key = api_key or os.getenv(KEYS[provider])
+    if not key:
+        raise ValueError(f"No API key for {provider}. Enter one in the sidebar or set {KEYS[provider]}.")
+    model_id = model_id or os.getenv("LLM_MODEL") or DEFAULTS[provider]
+    base_url = base_url or os.getenv("LLM_BASE_URL") or None
 
     if provider == "openrouter":
         from agno.models.openrouter import OpenRouter
-        return OpenRouter(id=model_id)
+        return OpenRouter(id=model_id, api_key=key, **({"base_url": base_url} if base_url else {}))
     if provider == "xai":
         from agno.models.xai import xAI
-        return xAI(id=model_id)
+        return xAI(id=model_id, api_key=key, **({"base_url": base_url} if base_url else {}))
     if provider == "groq":
         from agno.models.groq import Groq
-        return Groq(id=model_id)
+        return Groq(id=model_id, api_key=key)
     from agno.models.anthropic import Claude
-    return Claude(id=model_id)
+    return Claude(id=model_id, api_key=key)

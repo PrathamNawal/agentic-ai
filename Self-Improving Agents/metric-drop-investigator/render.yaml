@@ -1,0 +1,20 @@
+# One-click Render blueprint. Free plan = disk resets on restart (use the Backup button on the Memory page),
+# or switch plan to "starter" and uncomment the disk to keep memory permanently.
+services:
+  - type: web
+    name: metric-anomaly-investigator
+    runtime: python
+    plan: free
+    rootDir: Self-Improving Agents/metric-drop-investigator
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_PASSWORD
+        sync: false
+    # disk:
+    #   name: agent-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # then also set env var DATA_DIR=/var/data

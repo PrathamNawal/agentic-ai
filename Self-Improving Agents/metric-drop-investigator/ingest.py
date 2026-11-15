@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 
 import requests
 
-from db import DB_PATH, ROOT, WATCHLIST, connect
+import config
+from db import DB_PATH, ROOT, connect
 
 API = "https://crates.io/api/v1"
 # crates.io asks API clients to identify themselves and stay under 1 req/sec.
@@ -72,6 +73,30 @@ def export_csv(con) -> None:
     print(f"exported CSV snapshots to {out}")
 
 
+def load_snapshots(con) -> int:
+    """Seed an empty database from the committed CSV snapshots (instant start, e.g. on a fresh deploy)."""
+    snap = ROOT / "data" / "snapshots"
+    if not (snap / "daily_downloads.csv").exists():
+        return 0
+    n = 0
+    with open(snap / "versions.csv") as f:
+        rows = [tuple(r.values()) for r in csv.DictReader(f)]
+    con.executemany("INSERT OR IGNORE INTO versions VALUES (?,?,?,?,?,?)", rows)
+    with open(snap / "daily_downloads.csv") as f:
+        rows = [tuple(r.values()) for r in csv.DictReader(f)]
+    con.executemany("INSERT OR IGNORE INTO daily_downloads VALUES (?,?,?,?,?)", rows)
+    con.commit()
+    return len(rows)
+
+
+def ensure_data() -> bool:
+    """True if the database has data (seeding it from snapshots on first start)."""
+    con = connect()
+    if con.execute("SELECT 1 FROM daily_downloads LIMIT 1").fetchone():
+        return True
+    return load_snapshots(con) > 0
+
+
 def run(crates: list[str], export: bool) -> None:
     con = connect()
     for c in crates:
@@ -88,7 +113,7 @@ def run(crates: list[str], export: bool) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("crates", nargs="*", default=WATCHLIST)
+    ap.add_argument("crates", nargs="*", default=config.load()["watchlist"])
     ap.add_argument("--loop", type=float, metavar="HOURS", help="re-ingest forever, every N hours")
     ap.add_argument("--export", action="store_true", help="write CSV snapshots")
     a = ap.parse_args()
