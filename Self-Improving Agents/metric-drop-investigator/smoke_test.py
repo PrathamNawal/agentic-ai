@@ -37,6 +37,8 @@ con.execute("DELETE FROM investigations WHERE id=?", (rid,)); con.commit()
 assert con.execute("SELECT COUNT(*) FROM investigations").fetchone()[0] == before
 assert "error" in json.loads(t.record_investigation(c, d, "NOT_A_CAUSE", "low", "x", "x"))
 
-agent = build_agent()
+from llm import DEFAULTS
+from agno.models.openrouter import OpenRouter
+agent = build_agent(OpenRouter(id=DEFAULTS['openrouter'], api_key='dummy'))  # construct only; no network call
 print(f"\nAgno agent built: {agent.name}, {len(agent.tools)} tools")
 print("\nSMOKE TEST PASSED")

@@ -1,16 +1,15 @@
 """Metric Anomaly Investigator: a self-improving Agno agent over real crates.io data.
 
-    export ANTHROPIC_API_KEY=...
+    export OPENROUTER_API_KEY=...   # or XAI_API_KEY / GROQ_API_KEY / ANTHROPIC_API_KEY (see llm.py)
     python agent.py                                   # scan watchlist, investigate the worst recent drop
     python agent.py "Why did tokio drop on 2026-11-03?"
 """
-import os
 import sys
 
 from agno.agent import Agent
-from agno.models.anthropic import Claude
 
 from db import CAUSES
+from llm import get_model
 from tools import ALL_TOOLS
 
 INSTRUCTIONS = f"""
@@ -43,10 +42,10 @@ Rules
 """
 
 
-def build_agent(model_id: str = "claude-sonnet-5-5") -> Agent:
+def build_agent(model=None) -> Agent:
     return Agent(
         name="Metric Anomaly Investigator",
-        model=Claude(id=model_id),
+        model=model or get_model(),
         tools=ALL_TOOLS,
         instructions=INSTRUCTIONS,
         tool_call_limit=25,   # hard ceiling on the investigation loop
@@ -56,7 +55,5 @@ def build_agent(model_id: str = "claude-sonnet-5-5") -> Agent:
 
 
 if __name__ == "__main__":
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        sys.exit("Set ANTHROPIC_API_KEY to run the agent (tools can be tested without it: python smoke_test.py).")
     task = " ".join(sys.argv[1:]) or "Scan the watchlist and investigate the most significant recent anomaly in daily downloads."
     build_agent().print_response(task, stream=True)

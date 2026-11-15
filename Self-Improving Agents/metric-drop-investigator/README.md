@@ -38,7 +38,7 @@ Data quality (12 crates, 5,627 rows, 2026-08-18 to 2026-11-15):
 ## 3. How it works
 
 ```
-ingest.py -> data/crates.db (SQLite) -> tools.py (10 tools) -> agent.py (Agno + Claude)
+ingest.py -> data/crates.db (SQLite) -> tools.py (10 tools) -> agent.py (Agno + any LLM, see llm.py)
                                               ^                         |
                                   feedback.py (human grades) <- record_investigation
 ```
@@ -62,7 +62,8 @@ agent can only write to its own memory tables, and the cause list is fixed.
 python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 python ingest.py --export          # fetch real data (~30s); --loop 6 for continuous ingestion
 python smoke_test.py               # tests every tool on real data, no API key needed
-export ANTHROPIC_API_KEY=...
+export OPENROUTER_API_KEY=...     # or XAI_API_KEY / GROQ_API_KEY / ANTHROPIC_API_KEY
+# optional: LLM_PROVIDER=openrouter|xai|groq|anthropic   LLM_MODEL=<model id>
 python agent.py                    # agent picks the biggest recent anomaly
 python agent.py "Why did rand jump on 2026-10-10?"
 python feedback.py list            # then confirm / correct
@@ -74,5 +75,5 @@ CSV snapshots of the ingested data are in `data/snapshots/`.
 
 - Ingestion, tools, memory and the Agno agent are built, and every tool passes against real data.
 - **The live LLM loop has not been run yet.** The build environment had no model API key.
-  Run `python agent.py` with your key to see the first investigation.
+  Run `python agent.py` with your key (OpenRouter, xAI Grok, Groq, or Anthropic) to see the first investigation.
 - No investigations have been graded yet, so no lessons exist and no improvement has been observed.
