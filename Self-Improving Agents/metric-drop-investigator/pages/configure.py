@@ -13,8 +13,8 @@ st.title("⚙️ Configure")
 st.caption("Every change applies to the **next** run. Prompts are versioned, so you can always roll back.")
 cfg = config.load()
 
-tab_prompt, tab_tools, tab_analysis, tab_causes, tab_queries, tab_model, tab_data = st.tabs(
-    ["System prompt", "Tools", "Analysis", "Causes", "Saved queries", "Model", "Watchlist"])
+tab_prompt, tab_tools, tab_analysis, tab_causes, tab_queries, tab_model = st.tabs(
+    ["System prompt", "Tools", "Analysis", "Causes", "Saved queries", "Model"])
 
 # ------------------------------------------------------------------ prompt
 with tab_prompt:
@@ -79,12 +79,14 @@ with tab_analysis:
                     help="A day counts as anomalous if it differs from its baseline by at least this much. "
                          "Lower = more anomalies and more noise.")
     wk = st.slider("Baseline: same weekday over the previous N weeks", 2, 8, int(cfg["baseline_weeks"]))
-    win = st.slider("Scan window (days)", 7, 90, int(cfg["scan_window_days"]))
+    win = st.slider("Scan window (days before the dataset's last complete day)", 7, 365, int(cfg["scan_window_days"]))
+    minv = st.slider("Ignore companies with fewer than N complaints on a typical day", 0, 200, int(cfg["min_baseline_volume"]),
+                     help="Small counts swing wildly by chance. Raise this to cut noise.")
     lim = st.slider("Max tool calls per run", 5, 60, int(cfg["tool_call_limit"]),
                     help="Hard stop. Protects your budget if the agent gets stuck.")
     dt = st.text_area("Default task when you press Run", cfg["default_task"])
     if st.button("💾 Save analysis settings", type="primary"):
-        config.update(anomaly_threshold_pct=thr, baseline_weeks=wk, scan_window_days=win,
+        config.update(anomaly_threshold_pct=thr, baseline_weeks=wk, scan_window_days=win, min_baseline_volume=minv,
                       tool_call_limit=lim, default_task=dt)
         st.toast("Saved.")
 
@@ -116,7 +118,8 @@ with tab_causes:
 # ----------------------------------------------------------------- queries
 with tab_queries:
     st.caption("Give the agent your own named, read-only SQL queries. Use `:name` for parameters. "
-               "Tables: `daily_downloads(crate,date,version_id,downloads)`, `versions(id,crate,num,created_at,yanked)`.")
+               "Tables: `daily_counts(entity,date,dimension,segment,count)` (dimension = total, product, issue, channel, "
+               "response or timely) and `events(entity,date,title,kind,note,source)`.")
     qs = list(cfg["saved_queries"])
     for i, q in enumerate(qs):
         with st.container(border=True):
@@ -127,10 +130,10 @@ with tab_queries:
                 config.update(saved_queries=qs)
                 st.rerun()
     with st.form("newq", clear_on_submit=True):
-        qn = st.text_input("Name", placeholder="top_versions_on_day")
+        qn = st.text_input("Name", placeholder="top_issues_on_day")
         qd = st.text_input("When should the agent use it?")
-        qsql = st.text_area("SQL (single SELECT)", "SELECT version_id, downloads FROM daily_downloads "
-                            "WHERE crate = :crate AND date = :date ORDER BY downloads DESC LIMIT 5")
+        qsql = st.text_area("SQL (single SELECT)", "SELECT segment, count FROM daily_counts WHERE entity = :company AND date = :date "
+                            "AND dimension = 'issue' ORDER BY count DESC LIMIT 5")
         if st.form_submit_button("Add query"):
             if qn and qd and tools._is_select(qsql):
                 qs.append({"name": qn.strip(), "description": qd.strip(), "sql": qsql.strip()})
@@ -152,15 +155,6 @@ with tab_model:
     if st.button("💾 Save model settings", type="primary"):
         config.update(provider=provider, model=model.strip(), base_url=base.strip())
         st.session_state["provider"] = provider
-        st.toast("Saved.")
-
-# --------------------------------------------------------------- watchlist
-with tab_data:
-    wl = st.text_area("Crates to track (one per line)", "\n".join(cfg["watchlist"]), height=200)
-    st.caption("After changing this, refresh data on the **Data explorer** page. "
-               "More crates make the 'ecosystem-wide?' check stronger but ingestion slower (~2 seconds per crate).")
-    if st.button("💾 Save watchlist", type="primary"):
-        config.update(watchlist=[x.strip() for x in wl.splitlines() if x.strip()])
         st.toast("Saved.")
 
 st.divider()

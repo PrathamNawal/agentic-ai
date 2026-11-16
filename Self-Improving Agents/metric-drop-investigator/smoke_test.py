@@ -1,37 +1,39 @@
-"""Exercise every tool against the REAL ingested data (no LLM key needed)."""
+"""Exercise every tool against the REAL complaints data (no LLM key needed)."""
 import json
 
 import tools as t
 from db import connect
 from ingest import ensure_data
 
-ensure_data()
+assert ensure_data(), "no data: build_dataset.py must have been run (data/snapshots/)"
 
 
-def show(name, s, n=700):
+def show(name, s, n=500):
     print(f"\n--- {name}\n{s[:n]}{'...' if len(s) > n else ''}")
 
 
-scan = json.loads(t.scan_for_anomalies(15, 30))
-show("scan_for_anomalies", json.dumps(scan))
-assert scan["total_found"] >= 0
+scan = json.loads(t.scan_for_anomalies(30, 1500))
+show("scan_for_anomalies", json.dumps({k: v for k, v in scan.items() if k != "anomalies"}), 300)
+assert scan["total_found"] > 0 and scan["anomalies"]
+top = scan["anomalies"][0]
+c, d = top["company"], top["date"]
+print(f"\nInvestigating {c} on {d} ({top['deviation_pct']:+.0f}%)")
 
-if scan["anomalies"]:
-    top = scan["anomalies"][0]
-    c, d = top["crate"], top["date"]
-else:
-    c, d = "serde", sorted(json.loads(t.daily_series("serde", "2000-01-01", "2999-01-01")), key=lambda r: r["dev_pct"] or 0)[0]["date"]
-print(f"\nInvestigating {c} on {d}")
-
+show("list_entities", t.list_entities(), 300)
 show("peer_comparison", t.peer_comparison(d))
-show("version_breakdown", t.version_breakdown(c, d))
-show("releases", t.releases(c, "2026-08-18", "2026-12-31"))
+for dim in t.DIMENSIONS[:3]:
+    r = json.loads(t.segment_breakdown(c, d, dim))
+    assert r["segments"], dim
+show("segment_breakdown(channel)", t.segment_breakdown(c, d, "channel"))
+show("rate_trend", t.rate_trend(c, "2023-06-01", "2023-08-01", "timely"), 300)
+show("get_events", t.get_events(c, "2018-01-01", "2024-12-31"))
 show("daily_series", t.daily_series(c, d, d))
-show("run_sql ok", t.run_sql("SELECT crate, COUNT(*) n FROM daily_downloads GROUP BY crate LIMIT 3"))
-show("run_sql blocked", t.run_sql("DELETE FROM versions"))
-show("recall_memory", t.recall_memory(), 300)
+show("run_sql ok", t.run_sql("SELECT entity, SUM(count) n FROM daily_counts WHERE dimension='total' GROUP BY entity LIMIT 3"))
+assert "error" in json.loads(t.run_sql("DELETE FROM events"))
+assert "error" in json.loads(t.segment_breakdown(c, d, "nonsense"))
+show("recall_memory", t.recall_memory(), 200)
 
-# memory write path (rolled back so the smoke test leaves no fake investigation behind)
+# memory write path (cleaned up so the smoke test leaves nothing behind)
 con = connect()
 before = con.execute("SELECT COUNT(*) FROM investigations").fetchone()[0]
 rid = json.loads(t.record_investigation(c, d, "UNEXPLAINED", "low", "smoke test", "smoke"))["investigation_id"]

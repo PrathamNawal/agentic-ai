@@ -6,31 +6,33 @@ changes can be compared and rolled back.
 import json
 from datetime import datetime, timezone
 
-from db import CAUSES, DATA_DIR, WATCHLIST, connect
+from db import CAUSES, DATA_DIR, connect
 
 CONFIG_PATH = DATA_DIR / "config.json"
 
-DEFAULT_PROMPT = """You are a senior data analyst investigating anomalies (drops AND surges) in daily
-package downloads (crates.io, real data). You decide your own next step from what you
-find: you are not following a fixed script.
+DEFAULT_PROMPT = """You are a senior customer-experience analyst investigating anomalies (spikes AND drops) in daily
+consumer-complaint volume about US financial companies (real CFPB data). You decide your own next step
+from what you find: you are not following a fixed script.
 
 Method
-1. If no crate/date is given, call scan_for_anomalies and pick the most significant
-   anomaly. crates_anomalous_per_date is a first hint for ECOSYSTEM_WIDE.
-2. Form hypotheses, then test them with tools. Rule out cheap, common artifacts before
-   concluding a real regression: weekday seasonality (the baseline is already
-   same-weekday), partial days, ecosystem-wide moves (peer_comparison), a one-off spike
-   in the baseline (daily_series), version shifts (version_breakdown + releases).
-3. Stop when the evidence is decisive, or say UNEXPLAINED. Do not invent causes.
-   Quote the concrete numbers that support your conclusion.
-4. Call record_investigation exactly once with your conclusion. hypothesis must be one
-   of these keys:
+1. If no company/date is given, call scan_for_anomalies and pick the most significant anomaly.
+   companies_anomalous_per_date is a first hint for INDUSTRY_WIDE.
+2. Form hypotheses, then test them with tools. Rule out cheap, common artifacts before concluding
+   a real change: weekday seasonality (the baseline is already same-weekday), industry-wide moves
+   (peer_comparison), data artifacts (reporting lag, renamed products), then look for the driver:
+   segment_breakdown by product, issue and channel, get_events for known outside events, and
+   rate_trend if resolution quality may have changed.
+3. Stop when the evidence is decisive, or say UNEXPLAINED. Do not invent causes. Quote the concrete
+   numbers that support your conclusion, and cite an event only if get_events returned it.
+4. Call record_investigation exactly once with your conclusion. hypothesis must be one of these keys:
 {causes}
 5. If you learned something that would change how you investigate next time, call
    save_lesson (short, specific, actionable). Do not save trivia.
 
 Rules
-- Today's UTC date is always partial and is excluded from the data.
+- The newest days of the dataset are excluded because they are still being published.
+- Outcome fields (company response, timeliness) are labels set by the company. Very recent complaints
+  are still 'In progress', so recent outcome rates are biased.
 - Never claim a cause you did not test with a tool.
 - Final answer: 3-6 lines: what moved, the cause, the key numbers, confidence."""
 
@@ -41,11 +43,12 @@ DEFAULTS = {
     "base_url": "",                # optional OpenAI-compatible endpoint override
     # behaviour
     "tool_call_limit": 25,
-    "default_task": "Scan the watchlist and investigate the most significant recent anomaly in daily downloads.",
+    "default_task": "Scan all companies and investigate the most significant recent anomaly in daily complaint volume.",
     # analysis parameters used by the tools
     "anomaly_threshold_pct": 15.0,
     "baseline_weeks": 4,
-    "scan_window_days": 30,
+    "scan_window_days": 60,
+    "min_baseline_volume": 30,     # ignore companies whose typical day has fewer complaints (too noisy)
     # memory
     "memory_mode": "tool",         # tool = agent calls recall_memory | inject = lessons placed in prompt | off
     "memory_max_lessons": 15,
@@ -54,7 +57,6 @@ DEFAULTS = {
     "tool_descriptions": {},       # per-tool description overrides
     "saved_queries": [],           # [{name, description, sql}] -> exposed via run_saved_query
     # domain
-    "watchlist": WATCHLIST,
     "causes": CAUSES,
 }
 

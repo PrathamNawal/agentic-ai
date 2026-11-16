@@ -16,7 +16,7 @@ def main(argv: list[str]) -> None:
     cmd = argv[0] if argv else "list"
     if cmd == "list":
         for r in connect().execute("SELECT * FROM investigations WHERE status='pending' ORDER BY id"):
-            print(f"#{r['id']} {r['crate']} {r['event_date']}  -> {r['hypothesis']} "
+            print(f"#{r['id']} {r['entity']} {r['event_date']}  -> {r['hypothesis']} "
                   f"({r['confidence']})\n   evidence: {r['evidence']}\n")
     elif cmd == "confirm":
         memory.confirm(int(argv[1]))

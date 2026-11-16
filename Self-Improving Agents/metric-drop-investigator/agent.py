@@ -1,8 +1,8 @@
 """Metric Anomaly Investigator CLI. (The dashboard, `streamlit run app.py`, is the easy way.)
 
     export OPENROUTER_API_KEY=...   # or XAI_API_KEY / GROQ_API_KEY / ANTHROPIC_API_KEY (see llm.py)
-    python agent.py                                   # scan watchlist, investigate the biggest anomaly
-    python agent.py "Why did rand jump on 2026-10-10?"
+    python agent.py                                   # scan all companies, investigate the biggest anomaly
+    python agent.py "Why did complaints about Equifax spike on 2023-04-12?"
 
 Prompt, tools, memory and thresholds come from config.py (edit them in the dashboard).
 """

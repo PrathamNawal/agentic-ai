@@ -57,7 +57,7 @@ def llm_ready() -> tuple[bool, str]:
 def sidebar() -> None:
     cfg = config.load()
     with st.sidebar:
-        st.caption("Self-improving agent · real crates.io data")
+        st.caption("Self-improving agent · real CFPB complaints data")
         st.subheader("🔑 Model access")
         options = ["auto"] + list(llm.KEYS)
         default = st.session_state.get("provider") or cfg["provider"]

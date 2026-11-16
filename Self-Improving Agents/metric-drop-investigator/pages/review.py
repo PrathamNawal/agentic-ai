@@ -18,7 +18,7 @@ if not len(pending):
     st.success("Nothing waiting for review.")
 for _, r in pending.iterrows():
     with st.container(border=True):
-        st.markdown(f"**#{r['id']} · {r['crate']} · {r['event_date']}**")
+        st.markdown(f"**#{r['id']} · {r['entity']} · {r['event_date']}**")
         st.markdown(f"Agent concluded **{r['hypothesis']}** ({r['confidence']} confidence)")
         st.caption(causes.get(r["hypothesis"], ""))
         st.write(r["evidence"])
@@ -37,7 +37,7 @@ for _, r in pending.iterrows():
                 st.rerun()
 
 st.subheader("Graded history")
-done = ui.df("SELECT id, crate, event_date, hypothesis, status, true_cause, feedback_note, graded_at "
+done = ui.df("SELECT id, entity, event_date, hypothesis, status, true_cause, feedback_note, graded_at "
              "FROM investigations WHERE status!='pending' ORDER BY id DESC")
 if len(done):
     st.dataframe(done, hide_index=True)

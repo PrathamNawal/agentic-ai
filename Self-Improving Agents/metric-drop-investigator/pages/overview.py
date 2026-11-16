@@ -18,15 +18,14 @@ tr = memory.track_record()
 # ---- health checks
 st.subheader("Health")
 c1, c2, c3 = st.columns(3)
-last = ui.df("SELECT MAX(date) d, COUNT(*) n FROM daily_downloads").iloc[0]
+last = ui.df("SELECT MAX(date) d, COUNT(*) n FROM daily_counts").iloc[0]
 days_old = (datetime.now(timezone.utc).date() - datetime.fromisoformat(last["d"]).date()).days if last["d"] else None
 with c1:
     if days_old is None:
-        st.error("No data loaded. Open **Data explorer** and refresh.")
-    elif days_old > 3:
-        st.warning(f"Data is {days_old} days old (latest {last['d']}). Refresh it in **Data explorer**.")
+        st.error("No data loaded. Open **Data explorer**.")
     else:
-        st.success(f"Data is fresh (latest {last['d']}).")
+        st.info(f"Dataset: real CFPB complaints, latest day {last['d']}. It is a fixed historical snapshot "
+                "(see **Data explorer** for what it covers).")
 with c2:
     ok, info = ui.llm_ready()
     (st.success if ok else st.warning)(f"Model: {info}" if ok else info)

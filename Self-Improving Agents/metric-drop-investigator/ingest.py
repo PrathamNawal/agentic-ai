@@ -1,124 +1,79 @@
-"""Ingest REAL daily download data + release history from the crates.io API.
+"""Load the real CFPB complaints snapshot into SQLite (instant; no network needed).
 
-crates.io only exposes the last ~90 days of daily downloads per crate, so this
-script is meant to be re-run (cron / loop). Upserts are idempotent and history
-accumulates beyond 90 days the longer you run it.
+The snapshot (data/snapshots/complaints_daily.csv.gz) is built once from the full public database by
+build_dataset.py. On first start this module loads it and seeds a short list of starter events.
 
-    python ingest.py                 # whole watchlist
-    python ingest.py serde tokio     # specific crates
-    python ingest.py --loop 6        # re-ingest every 6 hours
-    python ingest.py --export        # also write CSV snapshots to data/snapshots/
+    python ingest.py          # (re)load the snapshot into an empty database
 """
-import argparse
-import csv
-import time
+import json
 from datetime import datetime, timezone
 
-import requests
+import pandas as pd
 
-import config
 from db import DB_PATH, ROOT, connect
 
-API = "https://crates.io/api/v1"
-# crates.io asks API clients to identify themselves and stay under 1 req/sec.
-HEADERS = {"User-Agent": "metric-drop-investigator (open-source research agent)"}
-PAUSE = 1.1
+SNAP = ROOT / "data" / "snapshots"
+
+# Starter list from public knowledge so the agent has something to cite. NOT authoritative:
+# the product manager should verify, edit, add, and delete events on the Data explorer page.
+# `match` = substrings of company names the event applies to ('*' = all companies).
+STARTER_EVENTS = [
+    ("2020-03-13", "US declares COVID-19 national emergency", "macro", ["*"]),
+    ("2020-03-27", "CARES Act signed (mortgage forbearance, student-loan payment pause)", "regulation", ["*"]),
+    ("2022-07-01", "Credit bureaus stop reporting paid medical collections; 1-year wait before new ones",
+     "policy", ["EQUIFAX", "EXPERIAN", "TRANSUNION"]),
+    ("2023-04-11", "Credit bureaus remove medical collections under $500 from reports",
+     "policy", ["EQUIFAX", "EXPERIAN", "TRANSUNION"]),
+    ("2023-09-01", "Federal student-loan interest resumes after pandemic pause", "regulation", ["*"]),
+    ("2023-10-01", "Federal student-loan payments resume", "regulation", ["*"]),
+]
+SOURCE = "starter list from public knowledge; verify before relying on it"
 
 
-def get(path: str) -> dict:
-    for attempt in range(4):
-        r = requests.get(f"{API}{path}", headers=HEADERS, timeout=30)
-        if r.status_code == 429 or r.status_code >= 500:
-            time.sleep(2 ** attempt * 2)
-            continue
-        r.raise_for_status()
-        return r.json()
-    r.raise_for_status()
-
-
-def ingest_crate(con, crate: str) -> int:
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-    meta = get(f"/crates/{crate}")
-    time.sleep(PAUSE)
-    con.executemany(
-        "INSERT OR REPLACE INTO versions VALUES (?,?,?,?,?,?)",
-        [
-            (v["id"], crate, v["num"], v["created_at"], int(v["yanked"]), v.get("rust_version"))
-            for v in meta["versions"]
-        ],
-    )
-
-    dl = get(f"/crates/{crate}/downloads")
-    time.sleep(PAUSE)
-    rows = [(crate, d["date"], d["version"], d["downloads"], now) for d in dl["version_downloads"]]
-    rows += [(crate, d["date"], 0, d["downloads"], now) for d in dl["meta"]["extra_downloads"]]
-    con.executemany(
-        "INSERT OR REPLACE INTO daily_downloads VALUES (?,?,?,?,?)", rows
-    )
-    con.execute("INSERT INTO ingest_runs VALUES (?,?,?)", (now, crate, len(rows)))
-    con.commit()
-    return len(rows)
-
-
-def export_csv(con) -> None:
-    out = ROOT / "data" / "snapshots"
-    out.mkdir(parents=True, exist_ok=True)
-    for table in ("versions", "daily_downloads"):
-        cur = con.execute(f"SELECT * FROM {table} ORDER BY 1,2,3" if table == "daily_downloads" else f"SELECT * FROM {table} ORDER BY crate, created_at")
-        with open(out / f"{table}.csv", "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow([c[0] for c in cur.description])
-            w.writerows(cur)
-    print(f"exported CSV snapshots to {out}")
-
-
-def load_snapshots(con) -> int:
-    """Seed an empty database from the committed CSV snapshots (instant start, e.g. on a fresh deploy)."""
-    snap = ROOT / "data" / "snapshots"
-    if not (snap / "daily_downloads.csv").exists():
+def load_snapshot(con) -> int:
+    f = SNAP / "complaints_daily.csv.gz"
+    if not f.exists():
         return 0
-    n = 0
-    with open(snap / "versions.csv") as f:
-        rows = [tuple(r.values()) for r in csv.DictReader(f)]
-    con.executemany("INSERT OR IGNORE INTO versions VALUES (?,?,?,?,?,?)", rows)
-    with open(snap / "daily_downloads.csv") as f:
-        rows = [tuple(r.values()) for r in csv.DictReader(f)]
-    con.executemany("INSERT OR IGNORE INTO daily_downloads VALUES (?,?,?,?,?)", rows)
+    df = pd.read_csv(f)
+    con.executemany("INSERT OR REPLACE INTO daily_counts VALUES (?,?,?,?,?)",
+                    df[["entity", "date", "dimension", "segment", "count"]].itertuples(index=False, name=None))
+    meta = json.loads((SNAP / "dataset_meta.json").read_text()) if (SNAP / "dataset_meta.json").exists() else {}
+    con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",
+                    [(k, json.dumps(v)) for k, v in meta.items()])
     con.commit()
-    return len(rows)
+    return len(df)
+
+
+def seed_events(con) -> int:
+    if con.execute("SELECT 1 FROM events LIMIT 1").fetchone():
+        return 0
+    entities = [r[0] for r in con.execute("SELECT DISTINCT entity FROM daily_counts")]
+    n = 0
+    for date, title, kind, match in STARTER_EVENTS:
+        targets = ["*"] if match == ["*"] else [e for e in entities if any(m in e.upper() for m in match)]
+        for e in targets:
+            con.execute("INSERT INTO events(entity,date,title,kind,note,source) VALUES (?,?,?,?,?,?)",
+                        (e, date, title, kind, "", SOURCE))
+            n += 1
+    con.commit()
+    return n
 
 
 def ensure_data() -> bool:
-    """True if the database has data (seeding it from snapshots on first start)."""
+    """True if the database has data (loading the snapshot on first start)."""
     con = connect()
-    if con.execute("SELECT 1 FROM daily_downloads LIMIT 1").fetchone():
-        return True
-    return load_snapshots(con) > 0
+    if not con.execute("SELECT 1 FROM daily_counts LIMIT 1").fetchone():
+        if load_snapshot(con) == 0:
+            return False
+    seed_events(con)
+    return True
 
 
-def run(crates: list[str], export: bool) -> None:
-    con = connect()
-    for c in crates:
-        try:
-            n = ingest_crate(con, c)
-            print(f"{c:10s} {n:4d} daily rows upserted")
-        except Exception as e:  # keep going; one crate failing shouldn't stop the batch
-            print(f"{c:10s} FAILED: {e}")
-    total = con.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM daily_downloads").fetchone()
-    print(f"db: {DB_PATH}  rows={total[0]} range={total[1]}..{total[2]}")
-    if export:
-        export_csv(con)
+def meta() -> dict:
+    con = connect(readonly=True)
+    return {r["key"]: json.loads(r["value"]) for r in con.execute("SELECT key,value FROM meta")}
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("crates", nargs="*", default=config.load()["watchlist"])
-    ap.add_argument("--loop", type=float, metavar="HOURS", help="re-ingest forever, every N hours")
-    ap.add_argument("--export", action="store_true", help="write CSV snapshots")
-    a = ap.parse_args()
-    while True:
-        run(a.crates, a.export)
-        if not a.loop:
-            break
-        time.sleep(a.loop * 3600)
+    con = connect()
+    print(f"loaded {load_snapshot(con):,} rows, seeded {seed_events(con)} events into {DB_PATH}")

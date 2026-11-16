@@ -3,8 +3,11 @@
 Used by both the dashboard and the CLI (agent.py).
 """
 import json
+import os
 import time
 from datetime import datetime, timezone
+
+os.environ.setdefault("AGNO_TELEMETRY", "false")  # no usage data leaves the app unless you opt in
 
 from agno.agent import Agent
 

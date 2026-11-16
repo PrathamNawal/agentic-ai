@@ -35,7 +35,7 @@ def confirm(inv_id: int) -> None:
     r = con.execute("SELECT * FROM investigations WHERE id=?", (inv_id,)).fetchone()
     con.commit()
     add_lesson(f"{r['hypothesis']} confirmed",
-               f"Human confirmed {r['hypothesis']} for {r['crate']} on {r['event_date']}. "
+               f"Human confirmed {r['hypothesis']} for {r['entity']} on {r['event_date']}. "
                f"Evidence pattern that worked: {r['evidence']}", "feedback")
 
 
@@ -45,7 +45,7 @@ def correct(inv_id: int, true_cause: str, note: str = "") -> None:
     con.execute("UPDATE investigations SET status='corrected', true_cause=?, feedback_note=?, graded_at=? WHERE id=?",
                 (true_cause, note, _now(), inv_id))
     con.commit()
-    add_lesson(f"{r['crate']} {r['event_date']}: I said {r['hypothesis']}, truth was {true_cause}",
+    add_lesson(f"{r['entity']} {r['event_date']}: I said {r['hypothesis']}, truth was {true_cause}",
                f"I wrongly concluded {r['hypothesis']} (evidence: {r['evidence']}). "
                f"Truth: {true_cause}. Human note: {note}", "feedback")
 

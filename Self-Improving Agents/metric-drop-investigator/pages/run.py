@@ -19,16 +19,16 @@ if mode == "Pick an anomaly":
     scan = json.loads(tools.scan_for_anomalies())
     rows = scan["anomalies"]
     if rows:
-        labels = [f"{r['crate']} · {r['date']} · {r['deviation_pct']:+.1f}% vs baseline" for r in rows]
+        labels = [f"{r['company']} · {r['date']} · {r['deviation_pct']:+.1f}% vs baseline" for r in rows]
         i = st.selectbox("Anomalies found by the scan (largest first)", range(len(rows)), format_func=lambda i: labels[i])
         r = rows[i]
-        task = f"Why did {r['crate']} downloads change by {r['deviation_pct']:+.1f}% on {r['date']}?"
+        task = f"Why did complaints about {r['company']} change by {r['deviation_pct']:+.1f}% on {r['date']}?"
         st.caption(f"{scan['total_found']} anomalies at ±{scan['threshold_pct']}%. "
                    "Change the threshold under Configure → Analysis.")
     else:
         st.info("No anomalies at the current threshold. Lower it under Configure → Analysis.")
 elif mode == "Ask my own question":
-    task = st.text_area("Question", "Why did tokio downloads move on 2026-10-10?")
+    task = st.text_area("Question", "Why did complaints about Equifax change on 2023-04-12?")
 
 with st.expander("What will the agent see? (system prompt + tools)"):
     text, version = runner.build_instructions(cfg)

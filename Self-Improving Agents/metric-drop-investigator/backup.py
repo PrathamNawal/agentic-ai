@@ -2,7 +2,7 @@
 
 Free hosting tiers reset the disk on restart. Download a backup from the Memory page now and
 then, and restore it after a restart so the agent keeps what it learned.
-(Raw download data is not included: it is re-seeded or re-fetched from crates.io.)
+(The complaints data is not included: it ships with the app. Events you curated ARE included.)
 """
 import json
 from datetime import datetime, timezone
@@ -12,8 +12,9 @@ from db import connect
 
 TABLES = {
     "lessons": ["ts", "situation", "lesson", "source"],
-    "investigations": ["ts", "crate", "event_date", "hypothesis", "confidence", "evidence", "steps",
+    "investigations": ["ts", "entity", "event_date", "hypothesis", "confidence", "evidence", "steps",
                        "status", "true_cause", "feedback_note", "graded_at"],
+    "events": ["entity", "date", "title", "kind", "note", "source"],
     "prompt_versions": ["ts", "label", "text", "active"],
     "runs": ["ts", "task", "provider", "model", "prompt_version", "status", "duration_s", "tool_calls",
              "input_tokens", "output_tokens", "answer", "steps", "error"],

@@ -6,51 +6,45 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 # Set DATA_DIR to a persistent disk when deploying; otherwise ./data
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
-DB_PATH = DATA_DIR / "crates.db"
+DB_PATH = DATA_DIR / "complaints.db"
 
-# Default crates to track (editable in the dashboard).
-WATCHLIST = [
-    "serde", "tokio", "rand", "clap", "syn", "regex",
-    "anyhow", "libc", "hyper", "reqwest", "itertools", "log",
-]
-
-# Default cause taxonomy (editable in the dashboard).
+# Default cause taxonomy (editable in the dashboard, and the first thing a PM should sharpen).
 CAUSES = {
-    "VERSION_MIGRATION": "Traffic shifted between versions (new release / yank / dependency bump); total may be flat.",
-    "ECOSYSTEM_WIDE": "Many peer crates moved the same way on the same day (up or down); not specific to this crate.",
+    "EXTERNAL_EVENT": "A known outside event (regulation, data breach, news, policy change) explains it; cite the event.",
+    "INDUSTRY_WIDE": "Many companies moved the same way on the same days; not specific to this company.",
+    "MIX_SHIFT": "One product or issue drove the change while others were flat (look at the breakdown).",
+    "CHANNEL_SHIFT": "The change comes from one submission channel (web, referral, phone...), e.g. a portal change or a campaign.",
+    "BATCH_OR_CAMPAIGN": "A burst of near-identical complaints in a short window (coordinated filing, credit-repair batch).",
     "WEEKLY_SEASONALITY": "Normal weekday/weekend pattern; not a real anomaly.",
-    "TRANSIENT_SPIKE_REVERSION": "A one-off spike in the baseline made a normal day look like a drop.",
-    "CI_OR_BOT_SURGE": "A surge confined to one crate or one version (CI storm, mirror, bot), not organic growth.",
-    "PARTIAL_OR_MISSING_DATA": "Day is incomplete or data is missing; not a real drop.",
-    "RELEASE_REGRESSION": "A release coincides with a real, sustained decline for that crate.",
+    "DATA_ARTIFACT": "Reporting lag, taxonomy rename, or incomplete recent days; not a real change in customer behaviour.",
     "UNEXPLAINED": "Evidence did not support any cause.",
 }
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS versions (
-    id INTEGER PRIMARY KEY,
-    crate TEXT NOT NULL,
-    num TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    yanked INTEGER NOT NULL,
-    rust_version TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_versions_crate ON versions(crate, created_at);
-
--- version_id = 0 is the "other versions" bucket (crates.io only itemises the
--- top versions per day; the rest arrive as an aggregate).
-CREATE TABLE IF NOT EXISTS daily_downloads (
-    crate TEXT NOT NULL,
+-- Daily complaint counts per company, overall ('total') and split by one dimension at a time:
+-- product | issue | channel | response | timely.
+CREATE TABLE IF NOT EXISTS daily_counts (
+    entity TEXT NOT NULL,
     date TEXT NOT NULL,
-    version_id INTEGER NOT NULL,
-    downloads INTEGER NOT NULL,
-    fetched_at TEXT NOT NULL,
-    PRIMARY KEY (crate, date, version_id)
+    dimension TEXT NOT NULL,
+    segment TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (entity, date, dimension, segment)
 );
 
-CREATE TABLE IF NOT EXISTS ingest_runs (
-    ts TEXT NOT NULL, crate TEXT NOT NULL, rows INTEGER NOT NULL
+-- Known events that can explain a move. entity '*' = applies to every company.
+-- THIS is where a product manager contributes domain knowledge.
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL,
+    date TEXT NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT,
+    note TEXT,
+    source TEXT
 );
+
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 -- One row per agent execution (monitoring).
 CREATE TABLE IF NOT EXISTS runs (
@@ -72,7 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS investigations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
-    crate TEXT NOT NULL,
+    entity TEXT NOT NULL,
     event_date TEXT NOT NULL,
     hypothesis TEXT NOT NULL,
     confidence TEXT,
