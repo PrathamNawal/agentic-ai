@@ -42,7 +42,7 @@ if not ok:
     st.warning(info)
 if st.button("Run investigation", type="primary", disabled=not ok):
     with st.spinner("Investigating… (usually 20–90 seconds)"):
-        out = runner.run_agent(task, api_key=ui.current_api_key())
+        out = runner.run_agent(task, api_key=ui.current_api_key(), provider=ui.current_provider())
     if out["status"] == "error":
         st.error(out["error"])
         st.caption("Common causes: wrong or empty API key, a model that doesn't support tool calling, "

@@ -27,10 +27,11 @@ def build_instructions(cfg: dict) -> tuple[str, int]:
     return text, p["id"]
 
 
-def build_agent(cfg: dict | None = None, model=None, api_key: str | None = None) -> tuple[Agent, int]:
+def build_agent(cfg: dict | None = None, model=None, api_key: str | None = None,
+                provider: str | None = None) -> tuple[Agent, int]:
     cfg = cfg or config.load()
     instructions, version = build_instructions(cfg)
-    model = model or llm.get_model(cfg["provider"], cfg["model"] or None, api_key, cfg["base_url"] or None)
+    model = model or llm.get_model(provider or cfg["provider"], cfg["model"] or None, api_key, cfg["base_url"] or None)
     agent = Agent(
         name="Metric Anomaly Investigator",
         model=model,
@@ -47,7 +48,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def run_agent(task: str | None = None, api_key: str | None = None, model=None) -> dict:
+def run_agent(task: str | None = None, api_key: str | None = None, model=None,
+              provider: str | None = None) -> dict:
     """Run one investigation. Always logs a row in `runs`, even on failure."""
     cfg = config.load()
     task = task or cfg["default_task"]
@@ -59,7 +61,7 @@ def run_agent(task: str | None = None, api_key: str | None = None, model=None) -
     started = time.time()
     result = {"run_id": run_id, "status": "error", "answer": "", "steps": [], "error": None}
     try:
-        agent, version = build_agent(cfg, model=model, api_key=api_key)
+        agent, version = build_agent(cfg, model=model, api_key=api_key, provider=provider)
         resp = agent.run(task)
         steps = []
         for t in (resp.tools or []):
@@ -70,7 +72,7 @@ def run_agent(task: str | None = None, api_key: str | None = None, model=None) -
         con.execute(
             "UPDATE runs SET status='ok', provider=?, model=?, prompt_version=?, duration_s=?, tool_calls=?, "
             "input_tokens=?, output_tokens=?, answer=?, steps=? WHERE id=?",
-            (llm.detect_provider(cfg["provider"]), agent.model.id, version, time.time() - started, len(steps),
+            (llm.detect_provider(provider or cfg["provider"]), agent.model.id, version, time.time() - started, len(steps),
              getattr(m, "input_tokens", None), getattr(m, "output_tokens", None),
              result["answer"], json.dumps(steps), run_id))
     except Exception as e:                      # noqa: BLE001 - surface any failure in the dashboard

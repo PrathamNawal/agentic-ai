@@ -35,14 +35,20 @@ def current_api_key() -> str | None:
     return st.session_state.get("api_key") or None
 
 
+def current_provider() -> str:
+    """Provider chosen in the sidebar (falls back to the saved setting)."""
+    return st.session_state.get("provider") or config.load()["provider"]
+
+
 def llm_ready() -> tuple[bool, str]:
-    cfg = config.load()
     try:
-        provider = llm.detect_provider(st.session_state.get("provider") or cfg["provider"])
+        provider = llm.detect_provider(current_provider())
     except ValueError as e:
         return False, str(e)
     if not provider:
-        return False, "Add an API key in the sidebar to run the agent."
+        if current_api_key():
+            return False, "Choose your provider (groq, openrouter, xai or anthropic) in the sidebar; 'auto' only works with server-side keys."
+        return False, "Choose a provider and paste your API key in the sidebar."
     if not (current_api_key() or os.getenv(llm.KEYS[provider])):
         return False, f"Add your {provider} API key in the sidebar."
     return True, provider
