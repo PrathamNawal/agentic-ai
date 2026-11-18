@@ -1,0 +1,8 @@
+agno
+requests
+openai
+groq
+anthropic
+streamlit
+pandas
+altair

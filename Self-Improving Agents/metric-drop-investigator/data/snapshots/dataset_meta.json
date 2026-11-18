@@ -1,0 +1,28 @@
+{
+  "source": "https://huggingface.co/datasets/BEE-spoke-data/consumer-finance-complaints",
+  "original": "https://www.consumerfinance.gov/data-research/consumer-complaints/",
+  "license": "CC0-1.0",
+  "built_at": "2026-11-16T17:41:34+00:00",
+  "complaints_in_source": 4707579,
+  "source_date_range": [
+    "2011-12-01",
+    "2024-02-17"
+  ],
+  "since": "2018-01-01",
+  "entities": [
+    "EQUIFAX, INC.",
+    "TRANSUNION INTERMEDIATE HOLDINGS, INC.",
+    "Experian Information Solutions Inc.",
+    "CAPITAL ONE FINANCIAL CORPORATION",
+    "JPMORGAN CHASE & CO.",
+    "WELLS FARGO & COMPANY",
+    "BANK OF AMERICA, NATIONAL ASSOCIATION",
+    "CITIBANK, N.A.",
+    "SYNCHRONY FINANCIAL",
+    "Bread Financial Holdings, Inc.",
+    "AMERICAN EXPRESS COMPANY",
+    "U.S. BANCORP"
+  ],
+  "snapshot_rows": 474466,
+  "last_complete_date": "2024-02-15"
+}
