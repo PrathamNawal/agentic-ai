@@ -19,8 +19,6 @@ import json
 import re
 import statistics as st
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
-
 import config
 import memory
 from db import connect
@@ -82,15 +80,14 @@ def list_entities() -> str:
                  "companies": [dict(r) for r in rows]})
 
 
-def scan_for_anomalies(threshold_pct: Optional[float] = None, last_n_days: Optional[int] = None,
-                       direction: str = "both") -> str:
-    """Scan ALL companies for days whose complaint volume deviates >= threshold_pct from the
-    same-weekday baseline. direction: 'down', 'up' or 'both'. Leave threshold_pct/last_n_days empty to use
-    the configured defaults. Returns the largest deviations first, plus how many companies were
-    anomalous on each date (many on one date => likely INDUSTRY_WIDE)."""
+def scan_for_anomalies(threshold_pct: float = 0, last_n_days: int = 0, direction: str = "both") -> str:
+    """Scan ALL companies for days whose complaint volume deviates >= threshold_pct (a percentage, e.g. 30)
+    from the same-weekday baseline. direction: 'down', 'up' or 'both'. Pass 0 for threshold_pct and
+    last_n_days to use the configured defaults. Returns the largest deviations first, plus the dates where
+    several companies were anomalous together (likely INDUSTRY_WIDE)."""
     cfg = config.load()
-    threshold_pct = float(threshold_pct if threshold_pct is not None else cfg["anomaly_threshold_pct"])
-    last_n_days = int(last_n_days if last_n_days is not None else cfg["scan_window_days"])
+    threshold_pct = float(threshold_pct) if threshold_pct and threshold_pct > 0 else float(cfg["anomaly_threshold_pct"])
+    last_n_days = int(last_n_days) if last_n_days and last_n_days > 0 else int(cfg["scan_window_days"])
     min_vol = float(cfg["min_baseline_volume"])
     con = connect(readonly=True)
     entities = [r[0] for r in con.execute("SELECT DISTINCT entity FROM daily_counts")]
