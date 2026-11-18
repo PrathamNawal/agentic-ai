@@ -63,7 +63,11 @@ def _baseline(totals: dict[str, int], d: str) -> float | None:
 
 
 def _out(obj) -> str:
-    return json.dumps(obj, default=str)
+    return json.dumps(obj, default=str, separators=(",", ":"))
+
+
+def _rows() -> int:
+    return int(config.load()["tool_result_max_rows"])
 
 
 # --------------------------------------------------------------- data tools
@@ -106,9 +110,12 @@ def scan_for_anomalies(threshold_pct: Optional[float] = None, last_n_days: Optio
     by_date: dict[str, int] = {}
     for f in found:
         by_date[f["date"]] = by_date.get(f["date"], 0) + 1
+    # only dates where several companies moved together (the INDUSTRY_WIDE hint), busiest first
+    multi = dict(sorted(((d, n) for d, n in by_date.items() if n >= 3), key=lambda x: -x[1])[:_rows()])
     return _out({"threshold_pct": threshold_pct, "min_baseline_volume": min_vol, "direction": direction,
-                 "last_complete_date": _cutoff(con), "companies_anomalous_per_date": dict(sorted(by_date.items())),
-                 "anomalies": found[:25], "total_found": len(found)})
+                 "last_complete_date": _cutoff(con), "dates_with_3plus_companies_anomalous": multi,
+                 "total_found": len(found), "showing_top": min(len(found), _rows()),
+                 "anomalies": found[:_rows()]})
 
 
 def daily_series(company: str, start: str, end: str) -> str:
@@ -122,6 +129,9 @@ def daily_series(company: str, start: str, end: str) -> str:
             b = _baseline(t, d)
             out.append({"date": d, "dow": date.fromisoformat(d).strftime("%a"), "complaints": t[d],
                         "dev_pct": round((t[d] / b - 1) * 100, 1) if b else None})
+    if len(out) > 31:   # keep it small: the most recent 31 days of the range
+        return _out({"note": f"range has {len(out)} days; showing the last 31. Narrow start/end for more.",
+                     "days": out[-31:]})
     return _out(out)
 
 
@@ -163,13 +173,15 @@ def segment_breakdown(company: str, day: str, dimension: str = "product") -> str
         base = st.median([by.get(d, 0) for d in days[1:]])
         out.append({"segment": name, "on_day": by.get(day, 0), "baseline": int(base),
                     "delta": int(by.get(day, 0) - base)})
-    out.sort(key=lambda x: x["delta"])
     total_delta = sum(o["delta"] for o in out)
     for o in out:
         o["share_of_change_pct"] = round(o["delta"] / total_delta * 100, 1) if total_delta else None
+    out.sort(key=lambda x: -abs(x["delta"]))
+    shown = out[:_rows()]
     return _out({"company": company, "date": day, "dimension": dimension, "total_delta": total_delta,
-                 "note": "Product and issue names were reorganised by the CFPB over the years, so a mix "
-                         "shift across a rename can be a DATA_ARTIFACT.", "segments": out})
+                 "segments_total": len(out), "segments_shown": len(shown),
+                 "note": "Product/issue names were reorganised by the CFPB over the years; a shift across a "
+                         "rename can be a DATA_ARTIFACT.", "segments": shown})
 
 
 def rate_trend(company: str, start: str, end: str, dimension: str = "response") -> str:
@@ -192,7 +204,9 @@ def rate_trend(company: str, start: str, end: str, dimension: str = "response") 
         tot = sum(weeks[wk].values())
         out.append({"week_start": wk, "total": tot,
                     **{k: round(v / tot * 100, 1) for k, v in sorted(weeks[wk].items())}})
-    return _out({"company": company, "dimension": dimension, "unit": "% of complaints", "weeks": out})
+    note = f"{len(out)} weeks in range; showing the last 12. Narrow start/end for others." if len(out) > 12 else ""
+    return _out({"company": company, "dimension": dimension, "unit": "% of complaints", "note": note,
+                 "weeks": out[-12:]})
 
 
 def get_events(company: str, start: str, end: str) -> str:
@@ -200,7 +214,7 @@ def get_events(company: str, start: str, end: str) -> str:
     this company or to every company. This is curated by the product team; absence of an event proves nothing."""
     rows = connect(readonly=True).execute(
         "SELECT date, title, kind, note, source, entity FROM events WHERE (entity=? OR entity='*') "
-        "AND date>=? AND date<=? ORDER BY date", (company, start, end)).fetchall()
+        "AND date>=? AND date<=? ORDER BY date LIMIT ?", (company, start, end, _rows() + 5)).fetchall()
     return _out([dict(r) for r in rows])
 
 
@@ -212,11 +226,11 @@ def run_sql(query: str) -> str:
     """Run a read-only SELECT against the database for ad-hoc questions.
     Table daily_counts(entity,date,dimension,segment,count): dimension is 'total' (segment 'all') or
     product | issue | channel | response | timely. Table events(entity,date,title,kind,note,source).
-    Max 200 rows."""
+    Max 50 rows."""
     if not _is_select(query):
         return _out({"error": "Only a single SELECT statement is allowed."})
     try:
-        rows = connect(readonly=True).execute(query).fetchmany(200)
+        rows = connect(readonly=True).execute(query).fetchmany(50)
         return _out([dict(r) for r in rows])
     except Exception as e:
         return _out({"error": str(e)})
@@ -231,7 +245,7 @@ def run_saved_query(name: str, params_json: str = "{}") -> str:
     if not _is_select(q["sql"]):
         return _out({"error": "Saved query must be a single SELECT."})
     try:
-        rows = connect(readonly=True).execute(q["sql"], json.loads(params_json or "{}")).fetchmany(200)
+        rows = connect(readonly=True).execute(q["sql"], json.loads(params_json or "{}")).fetchmany(50)
         return _out([dict(r) for r in rows])
     except Exception as e:
         return _out({"error": str(e)})
@@ -240,11 +254,10 @@ def run_saved_query(name: str, params_json: str = "{}") -> str:
 # ------------------------------------------------------------------ memory
 def recall_memory() -> str:
     """Read your own memory BEFORE investigating: lessons learned from past
-    investigations, plus your graded track record and the valid cause keys."""
+    investigations, plus your graded track record."""
     cfg = config.load()
     return _out({"memory": memory.memory_block(int(cfg["memory_max_lessons"])),
-                 "graded_outcomes_by_cause": memory.outcomes_by_cause(),
-                 "valid_causes": cfg["causes"]})
+                 "graded_outcomes_by_cause": memory.outcomes_by_cause()[:10]})
 
 
 def record_investigation(company: str, event_date: str, hypothesis: str, confidence: str,
@@ -285,17 +298,23 @@ def default_description(name: str) -> str:
     return " ".join((TOOL_REGISTRY[name].__doc__ or "").split())
 
 
-def _with_doc(fn, doc: str):
+def _capped(fn, doc: str | None, max_chars: int):
+    """Wrap a tool so its result can never exceed max_chars (keeps token use predictable)."""
     @functools.wraps(fn)
     def wrapper(*a, **k):
-        return fn(*a, **k)
-    wrapper.__doc__ = doc
+        out = fn(*a, **k)
+        if len(out) > max_chars:
+            return out[:max_chars] + f'..."[truncated {len(out) - max_chars} chars: narrow your query]"'
+        return out
+    if doc:
+        wrapper.__doc__ = doc
     return wrapper
 
 
 def build_tools(cfg: dict) -> list:
     """The tools the agent gets, honouring the PM's enable/disable switches and descriptions."""
     tools = []
+    cap = int(cfg["tool_result_max_chars"])
     for name, fn in TOOL_REGISTRY.items():
         if name in cfg["disabled_tools"]:
             continue
@@ -308,8 +327,8 @@ def build_tools(cfg: dict) -> list:
                 continue
             listing = "; ".join(f"{q['name']}: {q['description']}" for q in cfg["saved_queries"])
             doc = (cfg["tool_descriptions"].get(name) or default_description(name)) + f" Available queries: {listing}"
-            tools.append(_with_doc(fn, doc))
+            tools.append(_capped(fn, doc, cap))
             continue
         override = cfg["tool_descriptions"].get(name)
-        tools.append(_with_doc(fn, override) if override else fn)
+        tools.append(_capped(fn, override, cap))
     return tools

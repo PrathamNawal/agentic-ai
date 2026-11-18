@@ -41,12 +41,17 @@ ok, info = ui.llm_ready()
 if not ok:
     st.warning(info)
 if st.button("Run investigation", type="primary", disabled=not ok):
-    with st.spinner("Investigating… (usually 20–90 seconds)"):
+    with st.spinner("Investigating… (20–90 seconds; longer if the provider rate-limits and the app waits to retry)"):
         out = runner.run_agent(task, api_key=ui.current_api_key(), provider=ui.current_provider())
     if out["status"] == "error":
         st.error(out["error"])
-        st.caption("Common causes: wrong or empty API key, a model that doesn't support tool calling, "
-                   "or a bad model name (change it under Configure → Model).")
+        if "429" in out["error"] or "rate limit" in out["error"].lower():
+            st.info("The provider's rate limit was hit even after retrying. Options: try again in a minute, "
+                    "lower 'Max rows per tool result' under Configure → Analysis, raise the retries under "
+                    "Configure → Model, or use a provider with higher limits.")
+        else:
+            st.caption("Common causes: wrong or empty API key, a model that doesn't support tool calling, "
+                       "or a bad model name (change it under Configure → Model).")
     else:
         st.success(f"Done in {len(out['steps'])} tool calls.")
         st.subheader("Answer")

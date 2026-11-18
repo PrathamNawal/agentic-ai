@@ -43,6 +43,12 @@ DEFAULTS = {
     "base_url": "",                # optional OpenAI-compatible endpoint override
     # behaviour
     "tool_call_limit": 25,
+    # keep each tool result small: every call re-sends the whole history, and free API tiers have tight token limits
+    "tool_result_max_rows": 10,
+    "tool_result_max_chars": 3500,
+    # retry a rate-limited or failed model call (the investigation continues where it was)
+    "llm_retries": 5,
+    "llm_retry_delay_s": 20,
     "default_task": "Scan all companies and investigate the most significant recent anomaly in daily complaint volume.",
     # analysis parameters used by the tools
     "anomaly_threshold_pct": 15.0,

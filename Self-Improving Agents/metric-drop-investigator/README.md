@@ -76,6 +76,13 @@ the lesson is in memory on the next run. Success looks like higher accuracy and 
 Guardrails: tools are read-only (single SELECT on a read-only connection); the agent can only write to its own
 memory tables; conclusions are limited to the cause list; the tool-call cap is enforced by the framework.
 
+### Cost and rate limits
+Every tool call re-sends the whole conversation, so big tool results get expensive quickly. By default each tool
+returns at most 10 rows and 3,500 characters (about 2,900 tokens for a typical investigation, down from about
+10,000), and a failed or rate-limited model call is retried 5 times, 20 seconds apart, without restarting the
+investigation. All of this is adjustable under Configure -> Analysis and Configure -> Model. Provider failures
+are reported as failed runs, never as successes.
+
 ## 5. Run it
 
 ```bash

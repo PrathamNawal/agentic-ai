@@ -34,7 +34,8 @@ def build_agent(cfg: dict | None = None, model=None, api_key: str | None = None,
                 provider: str | None = None) -> tuple[Agent, int]:
     cfg = cfg or config.load()
     instructions, version = build_instructions(cfg)
-    model = model or llm.get_model(provider or cfg["provider"], cfg["model"] or None, api_key, cfg["base_url"] or None)
+    model = model or llm.get_model(provider or cfg["provider"], cfg["model"] or None, api_key, cfg["base_url"] or None,
+                                    retries=cfg["llm_retries"], retry_delay_s=cfg["llm_retry_delay_s"])
     agent = Agent(
         name="Metric Anomaly Investigator",
         model=model,
@@ -66,6 +67,9 @@ def run_agent(task: str | None = None, api_key: str | None = None, model=None,
     try:
         agent, version = build_agent(cfg, model=model, api_key=api_key, provider=provider)
         resp = agent.run(task)
+        # Agno reports model/provider failures in the result instead of raising: treat them as failures.
+        if str(getattr(resp.status, "value", resp.status)).upper() not in ("COMPLETED", "PENDING"):
+            raise RuntimeError(str(resp.content or f"run ended with status {resp.status}")[:600])
         steps = []
         for t in (resp.tools or []):
             steps.append({"tool": t.tool_name, "args": t.tool_args,

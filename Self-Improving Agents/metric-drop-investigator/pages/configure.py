@@ -84,10 +84,18 @@ with tab_analysis:
                      help="Small counts swing wildly by chance. Raise this to cut noise.")
     lim = st.slider("Max tool calls per run", 5, 60, int(cfg["tool_call_limit"]),
                     help="Hard stop. Protects your budget if the agent gets stuck.")
+    st.markdown("**Cost and rate limits**")
+    st.caption("Every tool call re-sends the whole conversation, so big tool results get expensive fast. "
+               "Free API tiers (for example Groq: 8,000 tokens/minute) need small results.")
+    rows = st.slider("Max rows per tool result", 3, 30, int(cfg["tool_result_max_rows"]),
+                     help="How many anomalies, segments or events a tool returns. Smaller = cheaper.")
+    chars = st.slider("Hard cap per tool result (characters, about 4 per token)", 1000, 12000,
+                      int(cfg["tool_result_max_chars"]), 500)
     dt = st.text_area("Default task when you press Run", cfg["default_task"])
     if st.button("💾 Save analysis settings", type="primary"):
         config.update(anomaly_threshold_pct=thr, baseline_weeks=wk, scan_window_days=win, min_baseline_volume=minv,
-                      tool_call_limit=lim, default_task=dt)
+                      tool_call_limit=lim, default_task=dt,
+                      tool_result_max_rows=rows, tool_result_max_chars=chars)
         st.toast("Saved.")
 
 # ------------------------------------------------------------------ causes
@@ -149,11 +157,17 @@ with tab_model:
     model = st.text_input("Model", cfg["model"], placeholder=f"default: {llm.DEFAULTS.get(provider, 'per provider')}",
                           help="Must support tool calling. For OpenRouter use ids like x-ai/grok-4.1-fast.")
     base = st.text_input("Custom base URL (optional, OpenRouter/xAI)", cfg["base_url"])
+    r1, r2 = st.columns(2)
+    retries = r1.slider("Retries when the provider says 'rate limit' or errors", 0, 8, int(cfg["llm_retries"]),
+                        help="Only the failed model call is retried, so the investigation keeps its progress.")
+    delay = r2.slider("Wait between retries (seconds)", 1, 60, int(cfg["llm_retry_delay_s"]),
+                      help="Groq's free tier usually asks for about 25 seconds.")
     st.caption("API keys are never stored here. Enter yours in the sidebar, or set it on the server.")
     st.table({"Provider": list(llm.DEFAULTS), "Default model": list(llm.DEFAULTS.values()),
               "Server env var": list(llm.KEYS.values())})
     if st.button("💾 Save model settings", type="primary"):
-        config.update(provider=provider, model=model.strip(), base_url=base.strip())
+        config.update(provider=provider, model=model.strip(), base_url=base.strip(),
+                      llm_retries=retries, llm_retry_delay_s=delay)
         st.session_state["provider"] = provider
         st.toast("Saved.")
 

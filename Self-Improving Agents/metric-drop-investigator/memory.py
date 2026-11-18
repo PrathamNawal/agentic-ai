@@ -74,7 +74,7 @@ def memory_block(max_lessons: int) -> str:
     lines = []
     if lessons:
         lines.append("Lessons from past investigations (newest first):")
-        lines += [f"- [{l['source']}] {l['situation']}: {l['lesson']}" for l in lessons]
+        lines += [f"- [{l['source']}] {l['situation'][:120]}: {l['lesson'][:300]}" for l in lessons]
     else:
         lines.append("No lessons yet.")
     lines.append(f"Track record: {tr['confirmed']} confirmed, {tr['corrected']} corrected by humans.")

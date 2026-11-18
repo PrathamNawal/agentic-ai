@@ -39,7 +39,8 @@ def configured_providers() -> list[str]:
 
 
 def get_model(provider: str | None = None, model_id: str | None = None,
-              api_key: str | None = None, base_url: str | None = None):
+              api_key: str | None = None, base_url: str | None = None,
+              retries: int = 0, retry_delay_s: int = 1):
     provider = detect_provider(provider)
     if not provider:
         raise ValueError("No LLM key found. Enter a key in the sidebar or set one of: " + ", ".join(KEYS.values()))
@@ -48,15 +49,17 @@ def get_model(provider: str | None = None, model_id: str | None = None,
         raise ValueError(f"No API key for {provider}. Enter one in the sidebar or set {KEYS[provider]}.")
     model_id = model_id or os.getenv("LLM_MODEL") or DEFAULTS[provider]
     base_url = base_url or os.getenv("LLM_BASE_URL") or None
+    # Retry only the failed model call (e.g. a 429 rate limit); the investigation keeps its progress.
+    retry = {"retries": int(retries), "delay_between_retries": int(retry_delay_s)}
 
     if provider == "openrouter":
         from agno.models.openrouter import OpenRouter
-        return OpenRouter(id=model_id, api_key=key, **({"base_url": base_url} if base_url else {}))
+        return OpenRouter(id=model_id, api_key=key, **retry, **({"base_url": base_url} if base_url else {}))
     if provider == "xai":
         from agno.models.xai import xAI
-        return xAI(id=model_id, api_key=key, **({"base_url": base_url} if base_url else {}))
+        return xAI(id=model_id, api_key=key, **retry, **({"base_url": base_url} if base_url else {}))
     if provider == "groq":
         from agno.models.groq import Groq
-        return Groq(id=model_id, api_key=key)
+        return Groq(id=model_id, api_key=key, **retry)
     from agno.models.anthropic import Claude
-    return Claude(id=model_id, api_key=key)
+    return Claude(id=model_id, api_key=key, **retry)
